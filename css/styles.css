@@ -1,0 +1,196 @@
+.container {
+  margin-top: 200px;
+  width: 618px;
+  height: 428px;
+  background-color: #fff;
+}
+
+.line__on {
+  position: relative;
+}
+
+.line__top {
+  display: flex;
+  align-items: center;
+  height: 0;
+}
+
+.line__1 {
+  width: 233px;
+  border: 1px solid #000;
+  background-color: #fff;
+}
+
+.line__hero {
+  display: flex;
+  position: relative;
+}
+
+.line__2 {
+  width: 0;
+  height: 340px;
+  border: 1px solid #000;
+  background-color: #fff;
+}
+
+.line__3 {
+  position: absolute;
+  right: 139px;
+  height: 55px;
+  border: 1px solid #000;
+  background-color: #fff;
+}
+
+.line__bottom {
+  display: flex;
+  align-items: center;
+  height: 0;
+}
+
+.line__4 {
+  width: 50px;
+  border: 1px solid #000;
+  background-color: #fff;
+}
+
+.line__off {
+  width: 460px;
+  position: absolute;
+  top: 24px;
+  left: 22px;
+}
+
+.line__1--off {
+  width: 211px;
+  border: 1px solid #000;
+  background-color: #fff;
+}
+
+.line__5 {
+  width: 0;
+  height: 288px;
+  border: 1px solid #000;
+  background-color: #fff;
+}
+
+.line__6 {
+  position: absolute;
+  right: 0;
+  height: 133px;
+  border: 1px solid #000;
+  background-color: #fff;
+}
+
+.line__6--off {
+  position: absolute;
+  right: 25px;
+  height: 27px;
+  border: 1px solid #000;
+  background-color: #fff;
+}
+
+.bolt {
+  position: absolute;
+  width: 100px;
+  height: 330px;
+  left: 90px;
+  top: 10px;
+}
+
+.arrow {
+  position: absolute;
+  bottom: -30px;
+  left: 248px;
+}
+
+.direction {
+  position: absolute;
+  top: 55px;
+  right: 59px;
+}
+
+.waves {
+  position: absolute;
+  top: 167px;
+  left: 162px;
+}
+
+.arrow__2 {
+  position: absolute;
+  right: -60px;
+  top: 60px;
+  width: 80px;
+}
+
+.arrow__3 {
+  position: absolute;
+  top: -50px;
+  right: -212px;
+  width: 90px;
+}
+
+.icon.green {
+  fill: green;
+}
+
+.arrow-6 svg {
+  width: 12px;
+  height: auto;
+  cursor: pointer;
+  overflow: visible;
+}
+.arrow-6 svg polygon,
+.arrow-6 svg path {
+  transition: all 0.5s cubic-bezier(0.2, 1, 0.3, 1);
+  fill: #000000;
+}
+.arrow-6 svg .arrow:hover polygon,
+.arrow-6 svg .arrow:hover path {
+  transition: all 1s cubic-bezier(0.2, 1, 0.3, 1);
+  fill: #000;
+}
+.arrow-6 svg .arrow:hover .arrow-6-pl {
+  animation: arrow-6-anim 1s cubic-bezier(0.2, 1, 0.3, 1) infinite;
+}
+.arrow-6 svg .arrow:hover .arrow-6-pl-fixed {
+  animation: arrow-6-fixed-anim 1s cubic-bezier(0.2, 1, 0.3, 1) infinite;
+}
+
+.box__start {
+  width: 230px;
+  height: 150px;
+  border: 1px solid #000;
+  position: absolute;
+  top: -200px;
+  right: -110px;
+}
+.box__start2 {
+  width: 230px;
+  height: 150px;
+  border: 1px solid #000;
+}
+
+@keyframes arrow-6-anim {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  5% {
+    transform: translateX(-0.1rem);
+  }
+  100% {
+    transform: translateX(1rem);
+    opacity: 0;
+  }
+}
+@keyframes arrow-6-fixed-anim {
+  5% {
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.4;
+  }
+  100% {
+    opacity: 1;
+  }
+}/*# sourceMappingURL=styles.css.map */
