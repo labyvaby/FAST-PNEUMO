@@ -1,4 +1,5 @@
 import React from 'react';
+import { Oscilloscope } from '../../components/Oscilloscope';
 
 const sensors = [
   { num: '01', label: 'Датчик давления', value: 'P, кПа', hint: 'Контроль давления питания и просадки магистрали при переключении.', acc: '#1FB6CE' },
@@ -67,11 +68,28 @@ const Methodology: React.FC = () => {
       </section>
 
       <section className='act'>
+        <div className='wrap'>
+          <div className='head2'>
+            <p className='kicker'>
+              <b>II</b> · Практикум
+            </p>
+            <h2 className='h2x'>Измерьте время срабатывания сами</h2>
+            <p className='sub2'>
+              Осциллограмма одного переключения по физической модели распределителя — как на экране
+              настоящего прибора, с шумом датчиков. Поставьте курсоры, как требует методика, и
+              сравните результат с эталоном.
+            </p>
+          </div>
+          <Oscilloscope />
+        </div>
+      </section>
+
+      <section className='act'>
         <div className='wrap two'>
           <div>
             <div className='head2'>
               <p className='kicker'>
-                <b>II</b> · Алгоритм
+                <b>III</b> · Алгоритм
               </p>
               <h2 className='h2x'>Шесть шагов одного измерения</h2>
             </div>
@@ -89,7 +107,7 @@ const Methodology: React.FC = () => {
           <div className='stack'>
             <div className='head2' style={{ marginBottom: 8 }}>
               <p className='kicker'>
-                <b>III</b> · Расчётные зависимости
+                <b>IV</b> · Расчётные зависимости
               </p>
             </div>
             {formulas.map((formula) => (

@@ -1,0 +1,541 @@
+// Виртуальный осциллограф. Цвета лучей совпадают с пневмосхемой:
+// команда — amber, ток — green, управляющий воздух — violet, ход золотника — teal.
+$ink: #f4f2ee;
+$ink-2: #b9b7c8;
+$ink-3: #7a788f;
+$line: rgba(255, 255, 255, 0.09);
+$line-2: rgba(255, 255, 255, 0.17);
+$green: #44c18a;
+$amber: #f2b43c;
+$red: #e5484d;
+$sweep: 900ms;
+
+.osc {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+  align-items: start;
+
+  @media (max-width: 1100px) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+// ---------- прибор ----------
+
+.osc__bezel {
+  padding: 14px;
+  border-radius: 26px;
+  border: 1px solid $line-2;
+  background: linear-gradient(180deg, #171a28, #0d0f19);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 30px 60px -30px rgba(0, 0, 0, 0.8);
+}
+
+.osc__topline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  padding: 2px 6px 10px;
+  font: 500 11.5px/1 var(--f-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: $ink-3;
+
+  b {
+    color: $ink;
+    font-weight: 700;
+  }
+}
+
+.osc__run {
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: rgba(68, 193, 138, 0.16);
+  color: $green;
+  font-weight: 700;
+}
+
+.osc__model {
+  margin-left: auto;
+}
+
+.osc__screen {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.7);
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+
+  &.is-dragging {
+    cursor: grabbing;
+  }
+}
+
+.osc__grid {
+  line {
+    stroke: rgba(160, 200, 220, 0.12);
+    stroke-width: 1;
+    stroke-dasharray: 2 6;
+  }
+
+  .minor {
+    stroke: rgba(160, 200, 220, 0.25);
+    stroke-dasharray: none;
+  }
+}
+
+.osc__trig {
+  fill: $amber;
+}
+
+.osc__ground-num {
+  fill: #05060b;
+  font: 800 11px var(--f-mono);
+}
+
+.osc__trace {
+  fill: none;
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.osc__sweep-clip {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: osc-sweep $sweep linear both;
+}
+
+.osc__beam {
+  pointer-events: none;
+  animation: osc-beam $sweep linear both;
+}
+
+.osc__solution {
+  line {
+    stroke: rgba(31, 182, 206, 0.8);
+    stroke-width: 1.5;
+    stroke-dasharray: 10 8;
+  }
+
+  text {
+    fill: #8ff0ff;
+    font: 700 15px var(--f-mono);
+  }
+
+  circle {
+    fill: none;
+    stroke: #fff;
+    stroke-width: 2.5;
+    animation: osc-ping 1.4s ease-out infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+}
+
+.osc__cursor {
+  cursor: ew-resize;
+  outline: none;
+
+  line {
+    stroke-width: 2;
+    stroke-dasharray: 8 6;
+  }
+
+  rect {
+    stroke-width: 1.5;
+  }
+
+  text {
+    font: 800 14px var(--f-mono);
+    fill: #05060b;
+  }
+
+  &.c1 {
+    line,
+    rect {
+      stroke: #ffffff;
+    }
+
+    rect {
+      fill: #ffffff;
+    }
+  }
+
+  &.c2 {
+    line,
+    rect {
+      stroke: #ff9ec7;
+    }
+
+    rect {
+      fill: #ff9ec7;
+    }
+  }
+
+  &.is-active line,
+  &:focus-visible line {
+    stroke-width: 3;
+    stroke-dasharray: none;
+  }
+
+  &:focus-visible rect {
+    stroke: $ink;
+    stroke-width: 4;
+  }
+}
+
+// кнопки каналов под экраном, как на передней панели
+.osc__scales {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+
+  @media (max-width: 720px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.osc__ch {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 2px 10px;
+  padding: 9px 12px;
+  border: 1px solid $line;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  color: $ink-3;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 120ms ease;
+
+  b {
+    grid-row: span 2;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    border: 1.5px solid var(--ch);
+    color: var(--ch);
+    font: 800 13px/1 var(--f-mono);
+  }
+
+  span {
+    font: 600 12.5px/1.2 var(--f-body);
+    color: $ink-2;
+  }
+
+  em {
+    font: 500 11px/1.2 var(--f-mono);
+    font-style: normal;
+  }
+
+  &.is-on {
+    border-color: color-mix(in srgb, var(--ch) 45%, transparent);
+    background: color-mix(in srgb, var(--ch) 8%, transparent);
+
+    b {
+      background: var(--ch);
+      color: #05060b;
+    }
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+}
+
+// ---------- боковая панель ----------
+
+.osc__panel {
+  display: grid;
+  gap: 12px;
+}
+
+.osc__task,
+.osc__readout,
+.osc__controls {
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid $line;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.osc__task {
+  display: grid;
+  gap: 10px;
+
+  p:not(.kicker) {
+    color: $ink-2;
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+
+  b {
+    color: $ink;
+  }
+}
+
+.osc__seg {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid $line-2;
+  border-radius: 99px;
+
+  button {
+    flex: 1;
+    height: 30px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 99px;
+    background: transparent;
+    color: $ink-3;
+    font: 600 11px/1 var(--f-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    cursor: pointer;
+
+    &.on {
+      background: rgba(255, 255, 255, 0.1);
+      color: $ink;
+    }
+  }
+
+  &.small button {
+    height: 26px;
+    padding: 0 10px;
+  }
+}
+
+.osc__delta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid $line;
+
+  span {
+    font: 500 11px/1 var(--f-mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: $ink-3;
+  }
+
+  b {
+    font: 600 34px/1 var(--f-display);
+    letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  small {
+    font-size: 15px;
+    color: $ink-3;
+  }
+}
+
+.osc__readout table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 500 12.5px/1 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+
+  th {
+    padding: 6px 0;
+    color: $ink-3;
+    font-weight: 500;
+    text-align: right;
+  }
+
+  td {
+    padding: 7px 0;
+    text-align: right;
+    color: $ink;
+  }
+
+  td:first-child {
+    text-align: left;
+    color: $ink-2;
+  }
+
+  i {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 8px;
+    border-radius: 50%;
+  }
+
+  tr.is-off td {
+    opacity: 0.35;
+  }
+}
+
+.osc__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+
+  .btn {
+    gap: 8px;
+  }
+}
+
+.osc__verdict {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid;
+  animation: osc-verdict 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  b {
+    display: block;
+    margin-bottom: 4px;
+    font: 600 15px/1.3 var(--f-display);
+    letter-spacing: -0.02em;
+  }
+
+  p {
+    color: $ink-2;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  &.is-good {
+    border-color: rgba(68, 193, 138, 0.5);
+    background: rgba(68, 193, 138, 0.08);
+
+    b {
+      color: #8be3b8;
+    }
+  }
+
+  &.is-ok {
+    border-color: rgba(242, 180, 60, 0.5);
+    background: rgba(242, 180, 60, 0.08);
+
+    b {
+      color: #ffd98a;
+    }
+  }
+
+  &.is-bad {
+    border-color: rgba(229, 72, 77, 0.5);
+    background: rgba(229, 72, 77, 0.08);
+
+    b {
+      color: #ffb3b5;
+    }
+  }
+}
+
+.osc__controls {
+  display: grid;
+  gap: 10px;
+}
+
+.osc__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+
+  > span {
+    font: 500 11px/1 var(--f-mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: $ink-3;
+  }
+}
+
+.osc__single {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 36px;
+  border: 1px solid rgba(68, 193, 138, 0.5);
+  border-radius: 99px;
+  background: rgba(68, 193, 138, 0.1);
+  color: #8be3b8;
+  font: 600 11px/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 160ms ease, transform 120ms ease;
+
+  svg {
+    font-size: 10px;
+  }
+
+  &:hover {
+    background: rgba(68, 193, 138, 0.18);
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+}
+
+@keyframes osc-sweep {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes osc-beam {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+
+  96% {
+    opacity: 1;
+  }
+
+  to {
+    transform: translateX(1060px);
+    opacity: 0;
+  }
+}
+
+@keyframes osc-ping {
+  from {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+
+  to {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@keyframes osc-verdict {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .osc__sweep-clip,
+  .osc__beam,
+  .osc__solution circle,
+  .osc__verdict {
+    animation: none;
+  }
+
+  .osc__beam {
+    display: none;
+  }
+}
