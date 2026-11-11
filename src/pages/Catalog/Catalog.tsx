@@ -261,9 +261,12 @@ const Catalog: React.FC = () => {
                             aria-label={`Сравнить ${valve.model}`}
                           />
                         </td>
-                        <td className='name'>
+                        <td className='name' title={valve.note}>
                           <b>{valve.model}</b>
-                          <span>{valve.maker}</span>
+                          <span>
+                            {valve.maker}
+                            {valve.note && ' · есть примечание'}
+                          </span>
                         </td>
                         <td>{valve.type}</td>
                         <td className='num'>
@@ -378,6 +381,16 @@ const Catalog: React.FC = () => {
                         </td>
                       ))}
                     </tr>
+                    {compared.some((valve) => valve.note) && (
+                      <tr>
+                        <td>Примечание</td>
+                        {compared.map((valve) => (
+                          <td key={valve.id} style={{ whiteSpace: 'normal', minWidth: 180, fontSize: 13, lineHeight: 1.45 }}>
+                            {valve.note ?? '—'}
+                          </td>
+                        ))}
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

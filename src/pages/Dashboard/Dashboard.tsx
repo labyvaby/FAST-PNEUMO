@@ -1,31 +1,46 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Line } from 'react-chartjs-2';
+import type { ChartData, ChartOptions } from 'chart.js';
 import { Link } from 'react-router-dom';
-import '../../lib/chartSetup';
+import { AXIS, COLORS, GRID, TOOLTIP } from '../../lib/chartSetup';
 import { ControlPanel } from '../../components/ControlPanel';
 import { Gauge } from '../../components/Gauge';
 import { Scheme } from '../../components/Scheme';
-import { MeasurementData, Status } from '../../launchTypes';
+import { MeasurementData, ResponseSample, Status } from '../../launchTypes';
 import { useLaunchContext } from '../../useLaunchContext';
+import {
+  DEFAULT_PARAMS,
+  SimPoint,
+  ValveParams,
+  crossingTime,
+  positionAt,
+  simulate,
+  simulateReturn,
+} from '../../lib/valveModel';
 
-const RESPONSE_LIMIT_MS = 950;
+// Ориентир: самое долгое время выключения среди моделей каталога (Festo VUVG-L14 — 40 мс).
+const RESPONSE_LIMIT_MS = 40;
 
-interface CycleResult {
-  forward: boolean;
-  ms: number;
-}
-
-const ENGINEERING_MODEL = {
-  supplyPressureKpa: 600,
+// Каждое переключение считается той же физической моделью, что и в разделе «Расчёт».
+// Давление питания берётся с «манометра» стенда, трение и напряжение немного гуляют от цикла
+// к циклу — так у серии переключений появляется разброс, как на реальном стенде.
+const STAND = {
+  params: DEFAULT_PARAMS,
+  supplyPressureKpa: DEFAULT_PARAMS.supplyBar * 100,
   nominalTemperature: 24,
-  strokeMm: 6,
-  spoolMassGram: 82,
   valveAreaMm2: 18,
   commandPeriodMs: 3200,
-  solverStepMs: 100,
-  pneumaticDelayMs: 34,
-  timeConstantSeconds: 0.28,
+  tickMs: 100,
+  frictionSpread: 0.15,
+  voltageSpread: 0.05,
 };
+
+type XY = { x: number; y: number };
+
+interface Transient {
+  series: SimPoint[];
+  responseMs: number;
+}
 
 interface ModelState {
   pressure: number;
@@ -40,10 +55,24 @@ interface ModelState {
 
 interface ActiveSwitch {
   startedAt: number;
-  targetPosition: number;
-  previousTargetPosition: number;
-  direction: boolean;
+  series: SimPoint[];
 }
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+const round = (value: number) => +value.toFixed(2);
+const round1 = (value: number) => +value.toFixed(1);
+const spread = (value: number, relative: number) => value * (1 + (Math.random() * 2 - 1) * relative);
+
+const ZERO_STATE: ModelState = {
+  pressure: 0,
+  temperature: 0,
+  flow: 0,
+  position: 0,
+  targetPosition: 0,
+  velocity: 0,
+  energy: 0,
+  responseTimeMs: null,
+};
 
 const Home: React.FC = () => {
   const { addLaunch, setCurrentStatus, status } = useLaunchContext();
@@ -52,16 +81,17 @@ const Home: React.FC = () => {
   const [temperature, setTemperature] = useState<number>(0);
   const [flow, setFlow] = useState<number>(0);
   const [position, setPosition] = useState<number>(0);
-  const [, setTargetPosition] = useState<number>(0);
   const [velocity, setVelocity] = useState<number>(0);
   const [energy, setEnergy] = useState<number>(0);
   const [lastResponseTime, setLastResponseTime] = useState<number | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [modelError, setModelError] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [launchData, setLaunchData] = useState<MeasurementData[]>([]);
   const [isToggled, setIsToggled] = useState<boolean>(false);
-  const [cycles, setCycles] = useState<CycleResult[]>([]);
+  const [cycles, setCycles] = useState<ResponseSample[]>([]);
+  const [transients, setTransients] = useState<{ forward?: Transient; reverse?: Transient }>({});
 
   const intervalRef = useRef<number | undefined>(undefined);
   const commandIntervalRef = useRef<number | undefined>(undefined);
@@ -72,24 +102,8 @@ const Home: React.FC = () => {
   const commandRef = useRef(false);
   const activeSwitchRef = useRef<ActiveSwitch | null>(null);
   const responseTimesRef = useRef<number[]>([]);
-  const currentValuesRef = useRef<ModelState>({
-    pressure: 0,
-    temperature: 0,
-    flow: 0,
-    position: 0,
-    targetPosition: 0,
-    velocity: 0,
-    energy: 0,
-    responseTimeMs: null,
-  });
-
-  const clamp = (value: number, min: number, max: number) => {
-    return Math.min(Math.max(value, min), max);
-  };
-
-  const round = (value: number) => {
-    return +value.toFixed(2);
-  };
+  const strokeSpeedRef = useRef(0);
+  const currentValuesRef = useRef<ModelState>(ZERO_STATE);
 
   const setCurrentValues = (values: ModelState) => {
     currentValuesRef.current = values;
@@ -97,7 +111,6 @@ const Home: React.FC = () => {
     setTemperature(values.temperature);
     setFlow(values.flow);
     setPosition(values.position);
-    setTargetPosition(values.targetPosition);
     setVelocity(values.velocity);
     setEnergy(values.energy);
     setLastResponseTime(values.responseTimeMs);
@@ -133,97 +146,73 @@ const Home: React.FC = () => {
     ]);
   };
 
+  /** Подаёт команду и сразу рассчитывает переходный процесс переключения. */
   const switchCommand = () => {
-    const nextCommand = !commandRef.current;
-    commandRef.current = nextCommand;
-    setIsToggled(nextCommand);
-    activeSwitchRef.current = {
-      startedAt: Date.now(),
-      targetPosition: nextCommand ? 100 : 0,
-      previousTargetPosition: currentValuesRef.current.targetPosition,
-      direction: nextCommand,
+    const forward = !commandRef.current;
+    commandRef.current = forward;
+    setIsToggled(forward);
+
+    const supplyKpa = currentValuesRef.current.pressure || STAND.supplyPressureKpa;
+    const params: ValveParams = {
+      ...STAND.params,
+      supplyBar: supplyKpa / 100,
+      friction: spread(STAND.params.friction, STAND.frictionSpread),
+      voltage: spread(STAND.params.voltage, STAND.voltageSpread),
     };
-    setHistory((prevHistory) => [
-      ...prevHistory,
-      `${nextCommand ? 'Прямой ход' : 'Обратный ход'} ${new Date().toLocaleTimeString()}`,
-    ]);
+    const result = forward ? simulate(params) : simulateReturn(params);
+    const crossing = result.ok ? crossingTime(result.series, forward ? 90 : 10, forward) : null;
+    const time = new Date().toLocaleTimeString();
+    const label = forward ? 'Прямой ход' : 'Обратный ход';
+
+    if (crossing === null) {
+      activeSwitchRef.current = null;
+      setModelError(result.reason ?? `${label}: золотник не прошёл порог хода`);
+      setHistory((prev) => [...prev, `${label} не завершён ${time}`]);
+      return;
+    }
+
+    const ms = round1(crossing);
+    activeSwitchRef.current = { startedAt: performance.now(), series: result.series };
+    responseTimesRef.current = [...responseTimesRef.current, ms];
+    strokeSpeedRef.current = result.tMove > 0 ? (STAND.params.strokeMm / result.tMove) * 1000 : 0;
+    currentValuesRef.current = { ...currentValuesRef.current, responseTimeMs: ms };
+    setLastResponseTime(ms);
+    setModelError(null);
+    setCycles((prev) => [...prev, { forward, ms }]);
+    setTransients((prev) => ({ ...prev, [forward ? 'forward' : 'reverse']: { series: result.series, responseMs: ms } }));
+    setHistory((prev) => [...prev, `${label} · ${ms} мс · ${time}`]);
   };
 
+  /** Тик индикаторов стенда: положение берётся из рассчитанной кривой, остальное — оценки. */
   const updateValues = () => {
     const previous = currentValuesRef.current;
-    const dt = ENGINEERING_MODEL.solverStepMs / 1000;
+    const dt = STAND.tickMs / 1000;
     const target = commandRef.current ? 100 : 0;
+    const active = activeSwitchRef.current;
+    const nextPosition = active ? positionAt(active.series, performance.now() - active.startedAt) : previous.position;
+
     const pressureLoss = Math.abs(target - previous.position) * 0.18;
-    const pressureRipple =
-      Math.sin((Date.now() - (launchStartedAtRef.current ?? Date.now())) / 420) * 1.5;
-    const supplyPressure = clamp(
-      ENGINEERING_MODEL.supplyPressureKpa - pressureLoss + pressureRipple,
-      540,
-      620
-    );
-    const temperatureRise = Math.abs(previous.velocity) * 0.003;
-    const nextTemperature = clamp(
-      previous.temperature + temperatureRise - 0.015,
-      22,
-      38
-    );
-    const pressureFactor = ENGINEERING_MODEL.supplyPressureKpa / supplyPressure;
-    const thermalFactor = 1 + (nextTemperature - ENGINEERING_MODEL.nominalTemperature) * 0.006;
-    const tau =
-      ENGINEERING_MODEL.timeConstantSeconds * pressureFactor * thermalFactor;
-    const alpha = 1 - Math.exp(-dt / tau);
-    const delayPassed = activeSwitchRef.current
-      ? Date.now() - activeSwitchRef.current.startedAt >=
-        ENGINEERING_MODEL.pneumaticDelayMs
-      : true;
-    const delayedTarget = activeSwitchRef.current
-      ? delayPassed
-        ? activeSwitchRef.current.targetPosition
-        : activeSwitchRef.current.previousTargetPosition
-      : target;
-    const nextPosition = clamp(
-      previous.position + (delayedTarget - previous.position) * alpha,
-      0,
-      100
-    );
-    const velocityMmS =
-      ((nextPosition - previous.position) / 100) *
-      ENGINEERING_MODEL.strokeMm /
-      dt;
+    const pressureRipple = Math.sin((Date.now() - (launchStartedAtRef.current ?? Date.now())) / 420) * 1.5;
+    const supplyPressure = clamp(STAND.supplyPressureKpa - pressureLoss + pressureRipple, 540, 620);
+    // скорость изменения показаний за тик — для оценки расхода и нагрева
+    const tickVelocity = (((nextPosition - previous.position) / 100) * STAND.params.strokeMm) / dt;
+    const nextTemperature = clamp(previous.temperature + Math.abs(tickVelocity) * 0.003 - 0.015, 22, 38);
     const flowM3H = clamp(
-      (Math.abs(velocityMmS) * ENGINEERING_MODEL.valveAreaMm2 * 0.0036) / 10 +
-        (isRunningRef.current ? 0.18 : 0),
+      (Math.abs(tickVelocity) * STAND.valveAreaMm2 * 0.0036) / 10 + (isRunningRef.current ? 0.18 : 0),
       0,
       7
     );
     const pneumaticPowerKw = (supplyPressure * flowM3H) / 3600;
-    const nextEnergy = previous.energy + (pneumaticPowerKw * dt) / 3600;
-    let responseTimeMs = previous.responseTimeMs;
 
-    if (activeSwitchRef.current) {
-      const threshold = activeSwitchRef.current.direction ? 90 : 10;
-      const reached = activeSwitchRef.current.direction
-        ? nextPosition >= threshold
-        : nextPosition <= threshold;
-
-      if (delayPassed && reached) {
-        responseTimeMs = Date.now() - activeSwitchRef.current.startedAt;
-        responseTimesRef.current = [...responseTimesRef.current, responseTimeMs];
-        const result = { forward: activeSwitchRef.current.direction, ms: responseTimeMs };
-        setCycles((prev) => [...prev, result]);
-        activeSwitchRef.current = null;
-      }
-    }
-
-    const nextValues = {
+    const nextValues: ModelState = {
       pressure: round(supplyPressure),
       temperature: round(nextTemperature),
       flow: round(flowM3H),
       position: round(nextPosition),
       targetPosition: target,
-      velocity: round(velocityMmS),
-      energy: nextEnergy,
-      responseTimeMs,
+      velocity: round(strokeSpeedRef.current),
+      energy: previous.energy + (pneumaticPowerKw * dt) / 3600,
+      responseTimeMs: previous.responseTimeMs,
     };
 
     setCurrentValues(nextValues);
@@ -238,45 +227,33 @@ const Home: React.FC = () => {
     clearTimers();
     isRunningRef.current = true;
     setCurrentStatus(Status.STARTED);
-    const nextCount = count + 1;
-    setCount(nextCount);
+    setCount(count + 1);
     launchStartedAtRef.current = Date.now();
     launchTimestampRef.current = new Date().toLocaleString();
     commandRef.current = false;
     activeSwitchRef.current = null;
     responseTimesRef.current = [];
+    strokeSpeedRef.current = 0;
 
-    const initialValues = {
-      pressure: ENGINEERING_MODEL.supplyPressureKpa,
-      temperature: ENGINEERING_MODEL.nominalTemperature,
-      flow: 0,
-      position: 0,
-      targetPosition: 0,
-      velocity: 0,
-      energy: 0,
-      responseTimeMs: null,
+    const initialValues: ModelState = {
+      ...ZERO_STATE,
+      pressure: STAND.supplyPressureKpa,
+      temperature: STAND.nominalTemperature,
     };
 
     setCurrentValues(initialValues);
     setErrors([]);
     setWarnings([]);
+    setModelError(null);
     setLaunchData([]);
     setCycles([]);
+    setTransients({});
     setIsToggled(false);
-    setHistory((prevHistory) => [
-      ...prevHistory,
-      `Запущена ${launchTimestampRef.current}`,
-    ]);
+    setHistory((prevHistory) => [...prevHistory, `Запущена ${launchTimestampRef.current}`]);
     appendMeasurement(initialValues, false);
-    intervalRef.current = window.setInterval(
-      updateValues,
-      ENGINEERING_MODEL.solverStepMs
-    );
+    intervalRef.current = window.setInterval(updateValues, STAND.tickMs);
     initialCommandTimeoutRef.current = window.setTimeout(switchCommand, 300);
-    commandIntervalRef.current = window.setInterval(
-      switchCommand,
-      ENGINEERING_MODEL.commandPeriodMs
-    );
+    commandIntervalRef.current = window.setInterval(switchCommand, STAND.commandPeriodMs);
   };
 
   const handleStop = () => {
@@ -291,28 +268,21 @@ const Home: React.FC = () => {
     const durationSeconds = launchStartedAtRef.current
       ? round((Date.now() - launchStartedAtRef.current) / 1000)
       : 0;
-    const samples = launchData.length > 0 ? launchData : [];
-    const source =
-      samples.length > 0 ? samples : [{ ...currentValuesRef.current }];
-    const averageField = (
-      field: 'pressure' | 'temperature' | 'flow' | 'position' | 'velocity' | 'energy'
-    ) => round(source.reduce((sum, sample) => sum + sample[field], 0) / source.length);
+    const source: Pick<MeasurementData, 'pressure' | 'temperature' | 'flow' | 'position' | 'velocity' | 'energy'>[] =
+      launchData.length > 0 ? launchData : [{ ...currentValuesRef.current }];
+    const averageField = (field: 'pressure' | 'temperature' | 'flow' | 'position' | 'velocity' | 'energy') =>
+      round(source.reduce((sum, sample) => sum + sample[field], 0) / source.length);
     const responseTimes = responseTimesRef.current;
     const averageResponseTimeMs =
-      responseTimes.length > 0
-        ? round(
-            responseTimes.reduce((sum, value) => sum + value, 0) /
-              responseTimes.length
-          )
-        : 0;
+      responseTimes.length > 0 ? round(responseTimes.reduce((sum, value) => sum + value, 0) / responseTimes.length) : 0;
 
     addLaunch({
       id: `${Date.now()}-${count}`,
       timestamp: launchTimestampRef.current || endTimestamp,
       endTimestamp,
-      cycles: count,
+      cycles: responseTimes.length,
       durationSeconds,
-      samplesCount: samples.length,
+      samplesCount: launchData.length,
       pressure: averageField('pressure'),
       temperature: averageField('temperature'),
       flow: averageField('flow'),
@@ -322,6 +292,7 @@ const Home: React.FC = () => {
       averageResponseTimeMs,
       minResponseTimeMs: responseTimes.length > 0 ? Math.min(...responseTimes) : 0,
       maxResponseTimeMs: responseTimes.length > 0 ? Math.max(...responseTimes) : 0,
+      responses: cycles,
     });
     setHistory((prevHistory) => [...prevHistory, `Остановлена ${endTimestamp}`]);
     launchStartedAtRef.current = null;
@@ -339,24 +310,15 @@ const Home: React.FC = () => {
     commandRef.current = false;
     activeSwitchRef.current = null;
     responseTimesRef.current = [];
-    setCurrentValues({
-      pressure: 0,
-      temperature: 0,
-      flow: 0,
-      position: 0,
-      targetPosition: 0,
-      velocity: 0,
-      energy: 0,
-      responseTimeMs: null,
-    });
+    strokeSpeedRef.current = 0;
+    setCurrentValues(ZERO_STATE);
     setErrors([]);
     setWarnings([]);
-    setHistory((prevHistory) => [
-      ...prevHistory,
-      `Сброс ${new Date().toLocaleString()}`,
-    ]);
+    setModelError(null);
+    setHistory((prevHistory) => [...prevHistory, `Сброс ${new Date().toLocaleString()}`]);
     setLaunchData([]);
     setCycles([]);
+    setTransients({});
     setIsToggled(false);
   };
 
@@ -378,136 +340,117 @@ const Home: React.FC = () => {
       if (lastResponseTime && lastResponseTime > RESPONSE_LIMIT_MS) {
         nextErrors.push('Время срабатывания превышает допустимый предел');
       }
+      if (modelError) {
+        nextErrors.push(modelError);
+      }
     }
 
     setWarnings(nextWarnings);
     setErrors(nextErrors);
-  }, [lastResponseTime, pressure, status, temperature]);
+  }, [lastResponseTime, modelError, pressure, status, temperature]);
 
   const averageValue = (
-    field: keyof Pick<
-      MeasurementData,
-      'pressure' | 'temperature' | 'flow' | 'position' | 'velocity' | 'energy'
-    >
+    field: keyof Pick<MeasurementData, 'pressure' | 'temperature' | 'flow' | 'position' | 'velocity' | 'energy'>
   ) => {
     if (launchData.length === 0) {
       return currentValuesRef.current[field];
     }
 
-    return round(
-      launchData.reduce((sum, measurement) => sum + measurement[field], 0) /
-        launchData.length
-    );
-  };
-
-  const averageResponseTime =
-    responseTimesRef.current.length > 0
-      ? round(
-          responseTimesRef.current.reduce((sum, value) => sum + value, 0) /
-            responseTimesRef.current.length
-        )
-      : 0;
-
-  const isStarted = status === Status.STARTED;
-  const lastMeasurement = launchData[launchData.length - 1];
-
-  // окно графика: последние 15 секунд, чтобы кривая не сжималась при долгом запуске
-  const windowData = launchData.slice(-150);
-  const flat = (value: number) => windowData.map(() => value);
-  const data = {
-    labels: windowData.map((measurement) => `${measurement.elapsedSeconds.toFixed(1)} c`),
-    datasets: [
-      {
-        label: 'Положение золотника, %',
-        data: windowData.map((measurement) => measurement.position),
-        borderColor: '#1FB6CE',
-        backgroundColor: 'rgba(31,182,206,0.12)',
-        fill: true,
-        borderWidth: 2.5,
-        pointRadius: 0,
-        tension: 0.35,
-      },
-      {
-        label: 'Команда, %',
-        data: windowData.map((measurement) => measurement.targetPosition),
-        borderColor: '#F2B43C',
-        borderWidth: 1.5,
-        pointRadius: 0,
-        stepped: true,
-      },
-      {
-        label: 'Расход ×10, м³/ч',
-        data: windowData.map((measurement) => measurement.flow * 10),
-        borderColor: '#44C18A',
-        borderWidth: 1.5,
-        pointRadius: 0,
-        tension: 0.3,
-      },
-      {
-        label: 'Порог 90%',
-        data: flat(90),
-        borderColor: 'rgba(244,242,238,0.28)',
-        borderDash: [4, 4],
-        borderWidth: 1,
-        pointRadius: 0,
-      },
-      {
-        label: 'Порог 10%',
-        data: flat(10),
-        borderColor: 'rgba(244,242,238,0.28)',
-        borderDash: [4, 4],
-        borderWidth: 1,
-        pointRadius: 0,
-      },
-    ],
-  };
-
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: false as const,
-    interaction: { intersect: false, mode: 'index' as const },
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        backgroundColor: 'rgba(10,11,20,0.95)',
-        borderColor: 'rgba(255,255,255,0.17)',
-        borderWidth: 1,
-        titleColor: '#F4F2EE',
-        bodyColor: '#B9B7C8',
-        padding: 10,
-      },
-    },
-    scales: {
-      y: {
-        min: 0,
-        max: 100,
-        ticks: { stepSize: 10 },
-        grid: { color: 'rgba(255,255,255,0.06)' },
-        border: { display: false },
-      },
-      x: {
-        ticks: { maxTicksLimit: 8, maxRotation: 0 },
-        grid: { display: false },
-        border: { color: 'rgba(255,255,255,0.17)' },
-      },
-    },
+    return round(launchData.reduce((sum, measurement) => sum + measurement[field], 0) / launchData.length);
   };
 
   const mean = (values: number[]) =>
-    values.length > 0 ? Math.round(values.reduce((sum, v) => sum + v, 0) / values.length) : null;
+    values.length > 0 ? round1(values.reduce((sum, v) => sum + v, 0) / values.length) : null;
+  const averageResponseTime = mean(cycles.map((c) => c.ms));
   const forwardMean = mean(cycles.filter((c) => c.forward).map((c) => c.ms));
   const reverseMean = mean(cycles.filter((c) => !c.forward).map((c) => c.ms));
   const recentCycles = cycles.slice(-24);
   const barScale = Math.max(RESPONSE_LIMIT_MS * 1.12, ...recentCycles.map((c) => c.ms));
 
+  const isStarted = status === Status.STARTED;
+
+  // кривая последнего переключения в каждую сторону, время — от команды, мс
+  const curves = [
+    { t: transients.forward, label: 'Прямой ход, %', color: COLORS.teal, fill: 'rgba(31,182,206,0.10)' },
+    { t: transients.reverse, label: 'Обратный ход, %', color: COLORS.violet, fill: 'rgba(139,108,255,0.08)' },
+  ];
+  const chartMax = Math.ceil(
+    Math.max(10, ...curves.flatMap(({ t }) => (t ? [t.series[t.series.length - 1].t] : [])))
+  );
+  const level = (y: number): XY[] => [
+    { x: 0, y },
+    { x: chartMax, y },
+  ];
+  const curveData: ChartData<'line', XY[]> = {
+    datasets: [
+      ...curves.flatMap(({ t, label, color, fill }) =>
+        t
+          ? [
+              {
+                label,
+                data: t.series.map((point) => ({ x: point.t, y: point.x })),
+                borderColor: color,
+                backgroundColor: fill,
+                fill: true,
+                borderWidth: 2.5,
+                pointRadius: 0,
+              },
+              {
+                label: `tср ${t.responseMs} мс`,
+                data: [
+                  { x: t.responseMs, y: 0 },
+                  { x: t.responseMs, y: 100 },
+                ],
+                borderColor: color,
+                borderDash: [3, 4],
+                borderWidth: 1.5,
+                pointRadius: 0,
+              },
+            ]
+          : []
+      ),
+      { label: 'Порог 90%', data: level(90), borderColor: COLORS.faint, borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
+      { label: 'Порог 10%', data: level(10), borderColor: COLORS.faint, borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
+    ],
+  };
+
+  const curveOptions: ChartOptions<'line'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    interaction: { intersect: false, mode: 'nearest', axis: 'x' },
+    plugins: {
+      legend: { display: false },
+      tooltip: { ...TOOLTIP, filter: (item) => (item.dataset.label ?? '').includes('ход') },
+    },
+    scales: {
+      x: {
+        type: 'linear',
+        min: 0,
+        max: chartMax,
+        title: { display: true, text: 'время от команды, мс' },
+        grid: { color: GRID },
+        border: { color: AXIS },
+      },
+      y: {
+        min: 0,
+        max: 100,
+        ticks: { stepSize: 10 },
+        title: { display: true, text: 'x, % хода' },
+        grid: { color: GRID },
+        border: { display: false },
+      },
+    },
+  };
+
   const params = [
-    ['P', `${ENGINEERING_MODEL.supplyPressureKpa} кПа`],
-    ['ход', `${ENGINEERING_MODEL.strokeMm} мм`],
-    ['m', `${ENGINEERING_MODEL.spoolMassGram} г`],
-    ['τ', `${ENGINEERING_MODEL.timeConstantSeconds} с`],
-    ['задержка', `${ENGINEERING_MODEL.pneumaticDelayMs} мс`],
-    ['период', `${ENGINEERING_MODEL.commandPeriodMs / 1000} с`],
+    ['P', `${STAND.params.supplyBar} бар`],
+    ['m', `${STAND.params.spoolMassG} г`],
+    ['ход', `${STAND.params.strokeMm} мм`],
+    ['d канала', `${STAND.params.channelMm} мм`],
+    ['μ', `${STAND.params.friction} ±${STAND.frictionSpread * 100}%`],
+    ['U', `${STAND.params.voltage} В ±${STAND.voltageSpread * 100}%`],
+    ['период', `${STAND.commandPeriodMs / 1000} с`],
   ];
 
   return (
@@ -529,9 +472,10 @@ const Home: React.FC = () => {
             </h1>
             <p className='hero-sub'>
               Исследование быстродействия пневматического золотникового распределителя. Стенд
-              подаёт управляющий импульс каждые {ENGINEERING_MODEL.commandPeriodMs / 1000} с,
-              следит за золотником и считает <b>tср</b> — время от команды до прохождения 90% хода
-              при прямом переключении или 10% при обратном.
+              подаёт управляющий импульс каждые {STAND.commandPeriodMs / 1000} с и считает <b>tср</b> —
+              время от команды до прохождения 90% хода при прямом переключении или 10% при обратном.
+              Каждое переключение рассчитывается физической моделью из раздела «Расчёт»: катушка,
+              пилотная камера, движение золотника.
             </p>
             <ul className='params' aria-label='Параметры модели'>
               {params.map(([k, v]) => (
@@ -603,7 +547,7 @@ const Home: React.FC = () => {
                 <div className='stat'>
                   <span>Предел</span>
                   <b>{RESPONSE_LIMIT_MS}<small>мс</small></b>
-                  <em>выше — ошибка</em>
+                  <em>худшее tвыкл в каталоге</em>
                 </div>
               </div>
               <div className='card' style={{ '--acc': isToggled ? '#1FB6CE' : '#8B6CFF' } as React.CSSProperties}>
@@ -635,8 +579,9 @@ const Home: React.FC = () => {
             <div className='head2-row'>
               <h2 className='h2x'>Как золотник догоняет команду</h2>
               <p className='sub2'>
-                Ступенька — управляющая команда, бирюзовая кривая — фактическое положение. Момент,
-                когда кривая пересекает пунктир 90% или 10%, и даёт время срабатывания.
+                Команда подаётся в момент 0. Кривая — положение золотника в последнем переключении
+                в каждую сторону; момент, когда она пересекает пунктир 90% или 10%, и есть время
+                срабатывания.
               </p>
             </div>
           </div>
@@ -645,21 +590,24 @@ const Home: React.FC = () => {
             <div className='card'>
               <div className='card-h'>
                 <div>
-                  <h3 className='card-t'>Команда, положение и расход</h3>
-                  <p className='card-s'>Последние 15 секунд запуска</p>
+                  <h3 className='card-t'>Переходный процесс переключения</h3>
+                  <p className='card-s'>Последний прямой и обратный ход, мс от команды</p>
                 </div>
                 <span className='tag'>
                   <i />
-                  {lastMeasurement ? `${lastMeasurement.elapsedSeconds.toFixed(1)} c` : '0 c'}
+                  {lastResponseTime !== null ? `tср ${lastResponseTime} мс` : 'нет данных'}
                 </span>
               </div>
               <div className='chart-box'>
-                <Line data={data} options={chartOptions} />
+                {transients.forward || transients.reverse ? (
+                  <Line data={curveData} options={curveOptions} />
+                ) : (
+                  <div className='bars-empty'>Кривая появится после первого переключения</div>
+                )}
               </div>
               <div className='legend'>
-                <span><i style={{ '--c': '#1FB6CE' } as React.CSSProperties} />положение, %</span>
-                <span><i style={{ '--c': '#F2B43C' } as React.CSSProperties} />команда, %</span>
-                <span><i style={{ '--c': '#44C18A' } as React.CSSProperties} />расход ×10, м³/ч</span>
+                <span><i style={{ '--c': COLORS.teal } as React.CSSProperties} />прямой ход</span>
+                <span><i style={{ '--c': COLORS.violet } as React.CSSProperties} />обратный ход</span>
                 <span><i className='dash' style={{ '--c': 'rgba(244,242,238,.5)' } as React.CSSProperties} />пороги 10 / 90%</span>
               </div>
             </div>
@@ -695,10 +643,10 @@ const Home: React.FC = () => {
                 <span><i style={{ '--c': '#8B6CFF' } as React.CSSProperties} />обратный</span>
               </div>
               <ul className='avg-list'>
-                <li>Среднее tср за запуск<b>{averageResponseTime ? `${averageResponseTime} мс` : '—'}</b></li>
+                <li>Среднее tср за запуск<b>{averageResponseTime !== null ? `${averageResponseTime} мс` : '—'}</b></li>
                 <li>Давление, среднее<b>{averageValue('pressure')} кПа</b></li>
                 <li>Расход, средний<b>{averageValue('flow')} м³/ч</b></li>
-                <li>Скорость золотника<b>{averageValue('velocity')} мм/с</b></li>
+                <li>Скорость золотника на ходе<b>{averageValue('velocity')} мм/с</b></li>
                 <li>Температура воздуха<b>{averageValue('temperature')} °C</b></li>
               </ul>
             </div>
@@ -779,4 +727,3 @@ const USAGE = [
 ];
 
 export default Home;
-

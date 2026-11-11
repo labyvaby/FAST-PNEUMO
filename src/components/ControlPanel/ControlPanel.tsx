@@ -42,7 +42,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     { label: 'Температура воздуха', value: temperature.toFixed(1), unit: '°C', progress: temperature * 2.6 },
     { label: 'Расход', value: flow.toFixed(2), unit: 'м³/ч', progress: flow * 14 },
     { label: 'Положение золотника', value: position.toFixed(1), unit: '%', progress: position },
-    { label: 'Скорость золотника', value: velocity.toFixed(1), unit: 'мм/с', progress: Math.abs(velocity) * 5 },
+    { label: 'Скорость золотника', value: velocity.toFixed(1), unit: 'мм/с', progress: Math.abs(velocity) / 10 },
     { label: 'Энергия сжатого воздуха', value: (energy * 1000).toFixed(3), unit: 'Вт·ч', progress: energy * 1000 * 50 },
   ];
   const isStarted = status === Status.STARTED;

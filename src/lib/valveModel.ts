@@ -47,6 +47,7 @@ export const VALVE_CONST = {
   coilResistanceOhm: 160,
   coilInductanceH: 0.4,
   pullInCurrentA: 0.09,
+  dropOutCurrentA: 0.04,
   armatureTravelMs: 1.5,
   tempK: 293,
 };
@@ -219,6 +220,127 @@ export const simulate = (params: ValveParams, withSeries = true): SimResult => {
     uPullIn,
     series,
   };
+};
+
+// Обратный ход (катушку обесточили):
+//  1. ток спадает i(t) = U/R · e^(−t/τ) до тока отпускания I_отп, якорь пилота возвращается;
+//  2. пилотная камера стравливается через тот же канал в атмосферу, пока пружина не пересилит
+//     давление и трение покоя;
+//  3. пружина возвращает золотник: m·x'' = (p − pатм)·A − (F0 + k·x) − Fтр·sign(v) − c·v, до x = 0.
+// В результате tCoil — спад тока до отпускания, tFill — стравливание камеры до страгивания.
+export const simulateReturn = (params: ValveParams, withSeries = true): SimResult => {
+  const c = VALVE_CONST;
+  const uPullIn = c.pullInCurrentA * c.coilResistanceOhm;
+  const pMinBar = minSupplyBar(params);
+  const empty = { tCoil: 0, tArmature: 0, tFill: 0, tDelay: 0, tMove: 0, tTotal: 0, pMinBar, uPullIn, series: [] };
+
+  const area = spoolArea();
+  const stroke = params.strokeMm / 1000;
+  const fFriction = params.friction * c.sealNormalForceN;
+  if (c.springPreloadN <= fFriction) {
+    return { ...empty, ok: false, reason: `Трение ${fFriction.toFixed(1)} Н не меньше предварительного натяга пружины ${c.springPreloadN} Н: золотник не вернётся до упора.` };
+  }
+
+  const tau = c.coilInductanceH / c.coilResistanceOhm;
+  const i0 = params.voltage / c.coilResistanceOhm;
+  const tCoil = i0 > c.dropOutCurrentA ? tau * Math.log(i0 / c.dropOutCurrentA) * 1000 : 0;
+  const tArmature = c.armatureTravelMs;
+  const tOpen = tCoil + tArmature;
+
+  const orifice = (Math.PI * (params.channelMm / 1000) ** 2) / 4;
+  const v0 = c.pilotVolumeCm3 * 1e-6;
+  const mass = params.spoolMassG / 1000;
+  const pSupply = params.supplyBar * 1e5 + P_ATM;
+  const k = c.springRateNmm * 1000;
+  const rt = R_AIR * c.tempK;
+
+  let x = stroke;
+  let air = (pSupply * (v0 + area * x)) / rt;
+  let v = 0;
+  let moving = false;
+  let tStart: number | null = null;
+  let tEnd: number | null = null;
+  const dt = 2e-6;
+  const tMax = 0.3;
+  const series: SimPoint[] = [];
+  const sampleEvery = 20;
+
+  if (withSeries) {
+    series.push({ t: 0, p: params.supplyBar, x: 100 }, { t: tOpen, p: params.supplyBar, x: 100 });
+  }
+
+  let step = 0;
+  for (let t = 0; t < tMax; t += dt, step++) {
+    const p = (air * rt) / (v0 + area * x);
+    air = Math.max(0, air - orificeMassFlow(p, P_ATM, orifice, c.dischargeCoef, c.tempK) * dt);
+
+    // положительное back — сила, возвращающая золотник к x = 0
+    const back = c.springPreloadN + k * x - (p - P_ATM) * area;
+
+    if (tEnd === null) {
+      if (!moving && back > fFriction) {
+        moving = true;
+        if (tStart === null) tStart = t;
+      }
+      if (moving) {
+        // золотник идёт к x = 0 (v < 0), трение направлено против движения — в +x
+        const friction = v > 0 ? -fFriction : fFriction;
+        const a = (-back + friction - c.dampingNsM * v) / mass;
+        v += a * dt;
+        x += v * dt;
+        if (v >= 0 && back <= fFriction) {
+          v = 0;
+          moving = false;
+        }
+        if (x <= 0) {
+          x = 0;
+          v = 0;
+          moving = false;
+          tEnd = t;
+        }
+      }
+    }
+
+    if (withSeries && step % sampleEvery === 0) {
+      series.push({ t: tOpen + t * 1000, p: (p - P_ATM) / 1e5, x: (x / stroke) * 100 });
+    }
+
+    if (tEnd !== null && (!withSeries || t > tEnd * 1.4 + 0.002)) break;
+  }
+
+  if (tStart === null || tEnd === null) {
+    return { ...empty, tCoil, tArmature, ok: false, reason: 'Золотник не вернулся до упора за 300 мс: проверьте сочетание параметров.', series };
+  }
+
+  const tFill = tStart * 1000;
+  const tDelay = tOpen + tFill;
+  const tMove = (tEnd - tStart) * 1000;
+  return { ok: true, reason: null, tCoil, tArmature, tFill, tDelay, tMove, tTotal: tDelay + tMove, pMinBar, uPullIn, series };
+};
+
+/** Момент (мс), когда ход впервые проходит уровень level, %: вверх при rising, вниз иначе. Линейная интерполяция. */
+export const crossingTime = (series: SimPoint[], level: number, rising: boolean): number | null => {
+  for (let i = 1; i < series.length; i++) {
+    const a = series[i - 1];
+    const b = series[i];
+    const crossed = rising ? a.x < level && b.x >= level : a.x > level && b.x <= level;
+    if (crossed) return a.t + ((level - a.x) / (b.x - a.x)) * (b.t - a.t);
+  }
+  return null;
+};
+
+/** Положение золотника, % хода, в момент tMs от команды — по рассчитанной кривой. */
+export const positionAt = (series: SimPoint[], tMs: number): number => {
+  if (series.length === 0) return 0;
+  if (tMs <= series[0].t) return series[0].x;
+  for (let i = 1; i < series.length; i++) {
+    const b = series[i];
+    if (tMs <= b.t) {
+      const a = series[i - 1];
+      return a.x + ((tMs - a.t) / (b.t - a.t || 1)) * (b.x - a.x);
+    }
+  }
+  return series[series.length - 1].x;
 };
 
 export type SweepKey = 'supplyBar' | 'spoolMassG';

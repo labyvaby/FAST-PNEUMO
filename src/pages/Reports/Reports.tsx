@@ -1,9 +1,54 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useLaunchContext } from '../../useLaunchContext';
+import { LaunchData } from '../../launchTypes';
+
+// CSV под русский Excel: разделитель «;», десятичная запятая, BOM для кириллицы.
+const cell = (value: string | number) =>
+  typeof value === 'number' ? String(value).replace('.', ',') : `"${value.replace(/"/g, '""')}"`;
+
+const downloadCsv = (fileName: string, header: string[], rows: (string | number)[][]) => {
+  const text = [header.map(cell), ...rows.map((row) => row.map(cell))].map((row) => row.join(';')).join('\r\n');
+  const url = URL.createObjectURL(new Blob(['﻿', text], { type: 'text/csv;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+};
+
+const exportLaunches = (launches: LaunchData[]) =>
+  downloadCsv(
+    'zapuski.csv',
+    ['№', 'Начало', 'Конец', 'Длительность, с', 'Переключений', 'tср среднее, мс', 'tср мин, мс', 'tср макс, мс', 'Давление, кПа', 'Температура, °C', 'Расход, м³/ч', 'Скорость золотника, мм/с'],
+    launches.map((l, i) => [
+      i + 1,
+      l.timestamp,
+      l.endTimestamp,
+      l.durationSeconds,
+      l.responses?.length ?? l.cycles,
+      l.averageResponseTimeMs,
+      l.minResponseTimeMs,
+      l.maxResponseTimeMs,
+      l.pressure,
+      l.temperature,
+      l.flow,
+      l.velocity,
+    ])
+  );
+
+const exportResponses = (launch: LaunchData, index: number) =>
+  downloadCsv(
+    `zapusk-${String(index + 1).padStart(2, '0')}-pereklyucheniya.csv`,
+    ['№ переключения', 'Направление', 'tср, мс'],
+    (launch.responses ?? []).map((r, i) => [i + 1, r.forward ? 'прямой' : 'обратный', r.ms])
+  );
 
 const Statistics: React.FC = () => {
-  const { launches } = useLaunchContext();
+  const { launches, clearLaunches } = useLaunchContext();
+  const clear = () => {
+    if (window.confirm('Удалить все запуски из журнала? Восстановить их будет нельзя.')) clearLaunches();
+  };
   const totalSamples = launches.reduce((sum, launch) => sum + launch.samplesCount, 0);
   const withResponses = launches.filter((launch) => launch.averageResponseTimeMs > 0);
   const averageDuration =
@@ -19,7 +64,7 @@ const Statistics: React.FC = () => {
     withResponses.length > 0 ? Math.min(...withResponses.map((launch) => launch.minResponseTimeMs)) : 0;
 
   // общая шкала для полосок диапазона tср во всех карточках
-  const scaleMax = Math.max(1000, ...launches.map((launch) => launch.maxResponseTimeMs));
+  const scaleMax = Math.max(40, ...launches.map((launch) => launch.maxResponseTimeMs)) * 1.1;
   const pct = (value: number) => `${(value / scaleMax) * 100}%`;
 
   return (
@@ -33,8 +78,18 @@ const Statistics: React.FC = () => {
             <h1 className='hero-h'>Отчёты по завершённым запускам</h1>
             <p className='hero-sub'>
               Каждая остановка стенда сохраняет запуск: длительность, число измерений и разброс
-              времени срабатывания по серии переключений.
+              времени срабатывания по серии переключений. Журнал хранится в этом браузере.
             </p>
+            {launches.length > 0 && (
+              <div className='ctl-btns' style={{ marginTop: 20 }}>
+                <button type='button' className='btn btn-light btn-sm' onClick={() => exportLaunches(launches)}>
+                  Экспорт CSV
+                </button>
+                <button type='button' className='btn btn-ghost btn-sm' onClick={clear}>
+                  Очистить журнал
+                </button>
+              </div>
+            )}
           </div>
           <div className='stats' style={{ '--cols': 4 } as React.CSSProperties}>
             <div className='stat'>
@@ -50,7 +105,7 @@ const Statistics: React.FC = () => {
             <div className='stat hi' style={{ '--acc': '#1FB6CE' } as React.CSSProperties}>
               <span>Среднее <i className='sym'>tср</i></span>
               <b>
-                {averageResponseTime ? averageResponseTime.toFixed(0) : '—'}
+                {averageResponseTime ? averageResponseTime.toFixed(1) : '—'}
                 <small>мс</small>
               </b>
               <em>длительность {averageDuration.toFixed(1)} c</em>
@@ -109,7 +164,7 @@ const Statistics: React.FC = () => {
                       <div className='stat hi'>
                         <span>Среднее <i className='sym'>tср</i></span>
                         <b>
-                          {launch.averageResponseTimeMs ? launch.averageResponseTimeMs.toFixed(0) : '—'}
+                          {launch.averageResponseTimeMs ? launch.averageResponseTimeMs.toFixed(1) : '—'}
                           <small>мс</small>
                         </b>
                       </div>
@@ -127,8 +182,8 @@ const Statistics: React.FC = () => {
                           <b style={{ left: pct(launch.averageResponseTimeMs) }} />
                         </div>
                         <div className='range-cap'>
-                          <span>мин {launch.minResponseTimeMs.toFixed(0)} мс</span>
-                          <span>макс {launch.maxResponseTimeMs.toFixed(0)} мс</span>
+                          <span>мин {launch.minResponseTimeMs.toFixed(1)} мс</span>
+                          <span>макс {launch.maxResponseTimeMs.toFixed(1)} мс</span>
                         </div>
                       </>
                     )}
@@ -141,6 +196,13 @@ const Statistics: React.FC = () => {
                       <li>Скорость золотника<b>{launch.velocity.toFixed(1)} мм/с</b></li>
                       <li>Остановлен<b>{launch.endTimestamp}</b></li>
                     </ul>
+                    {launch.responses && launch.responses.length > 0 && (
+                      <div className='ctl-btns' style={{ marginTop: 14 }}>
+                        <button type='button' className='btn btn-ghost btn-sm' onClick={() => exportResponses(launch, index)}>
+                          CSV переключений · {launch.responses.length}
+                        </button>
+                      </div>
+                    )}
                   </article>
                 ))}
             </div>

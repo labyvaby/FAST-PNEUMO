@@ -1,6 +1,6 @@
 import { Route, Routes } from 'react-router-dom';
 import { Header } from './components/Header';
-import { Dashboard } from './pages/Dasboard';
+import { Dashboard } from './pages/Dashboard';
 import { Methodology } from './pages/Methodology';
 import Reports from './pages/Reports/Reports';
 import Calculator from './pages/Calculator/Calculator';

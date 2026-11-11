@@ -17,6 +17,12 @@ export interface MeasurementData {
   responseTimeMs: number | null;
 }
 
+/** Одно переключение в серии: направление и время срабатывания. */
+export interface ResponseSample {
+  forward: boolean;
+  ms: number;
+}
+
 export interface LaunchData {
   id: string;
   timestamp: string;
@@ -33,4 +39,6 @@ export interface LaunchData {
   averageResponseTimeMs: number;
   minResponseTimeMs: number;
   maxResponseTimeMs: number;
+  /** все переключения запуска; в старых записях может отсутствовать */
+  responses?: ResponseSample[];
 }
