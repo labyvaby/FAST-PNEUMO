@@ -1,0 +1,765 @@
+// Конфигуратор: живая схема подключений, «что запишет регистратор», водопад задержек.
+$teal: #1fb6ce;
+$green: #44c18a;
+$violet: #8b6cff;
+$amber: #f2b43c;
+$red: #e5484d;
+$ink: #f4f2ee;
+$ink-2: #b9b7c8;
+$ink-3: #7a788f;
+$line: rgba(255, 255, 255, 0.09);
+$line-2: rgba(255, 255, 255, 0.17);
+
+.cfg-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.cfg-play {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid rgba(242, 180, 60, 0.5);
+  border-radius: 99px;
+  background: rgba(242, 180, 60, 0.1);
+  color: #ffd98a;
+  font: 600 11px/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 160ms ease, transform 120ms ease;
+
+  svg {
+    font-size: 9px;
+  }
+
+  &:hover {
+    background: rgba(242, 180, 60, 0.18);
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+}
+
+// связь «рекомендация / строка бюджета ↔ схема»
+.cfg-link {
+  transition: opacity 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+
+  &.is-dim {
+    opacity: 0.38;
+  }
+
+  &.is-focus {
+    box-shadow: 0 0 0 1px rgba(244, 242, 238, 0.35);
+  }
+}
+
+.budget li.cfg-link {
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border-radius: 10px;
+}
+
+// ---------- схема ----------
+
+.wiring-wrap {
+  position: relative;
+}
+
+.wiring {
+  .blk {
+    outline: none;
+
+    rect {
+      transition: stroke 180ms ease, fill 180ms ease, opacity 180ms ease;
+    }
+
+    &[tabindex] {
+      cursor: help;
+    }
+
+    &.is-dim {
+      opacity: 0.4;
+    }
+
+    &.is-focus rect {
+      stroke: $ink;
+      stroke-width: 2;
+      fill: #171a2b;
+    }
+
+    &:focus-visible rect {
+      stroke: $ink;
+      stroke-width: 2.5;
+    }
+
+    &.is-warn > rect {
+      stroke: $amber;
+      stroke-width: 2;
+      animation: cfg-warn 1.8s ease-in-out infinite;
+    }
+
+    &.is-err > rect {
+      stroke: $red;
+      stroke-width: 2.2;
+      animation: cfg-err 1.1s ease-in-out infinite;
+    }
+
+    &.is-busy > rect {
+      fill: rgba(242, 180, 60, 0.14);
+      stroke: $amber;
+      stroke-width: 2.2;
+      filter: drop-shadow(0 0 10px rgba(242, 180, 60, 0.6));
+    }
+
+    &.sensor.is-busy > rect {
+      fill: rgba(139, 108, 255, 0.16);
+      stroke: $violet;
+      filter: drop-shadow(0 0 10px rgba(139, 108, 255, 0.6));
+    }
+  }
+
+  .valve-progress {
+    fill: $teal;
+    filter: drop-shadow(0 0 4px $teal);
+  }
+
+  .tube {
+    outline: none;
+    cursor: help;
+
+    &.is-dim {
+      opacity: 0.4;
+    }
+
+    &.is-warn .air {
+      animation: cfg-tube 1.1s ease-in-out infinite;
+    }
+
+    &.is-focus .lbl {
+      fill: $ink;
+    }
+  }
+
+  // импульс
+  .pulse-trail {
+    fill: none;
+    stroke-width: 4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .pulse-ctl .pulse-trail {
+    stroke: #ffd98a;
+    filter: drop-shadow(0 0 6px rgba(242, 180, 60, 0.9));
+  }
+
+  .pulse-sig .pulse-trail {
+    stroke: #c3b3ff;
+    filter: drop-shadow(0 0 6px rgba(139, 108, 255, 0.9));
+  }
+
+  .pulse-air .pulse-trail {
+    stroke: #8ff0ff;
+    filter: drop-shadow(0 0 6px rgba(31, 182, 206, 0.9));
+  }
+
+  .pulse-head {
+    fill: #fff;
+    filter: drop-shadow(0 0 8px #fff);
+  }
+
+  &:not(.is-playing) .pulse {
+    display: none;
+  }
+
+  // разъёмы регистратора
+  .ch-slot {
+    circle {
+      fill: #0b0c14;
+      stroke: $green;
+      stroke-width: 2;
+      transition: fill 160ms ease;
+    }
+
+    &.is-hit circle {
+      fill: $green;
+      filter: drop-shadow(0 0 8px $green);
+    }
+
+    &.is-lost circle {
+      stroke: $red;
+      fill: rgba(229, 72, 77, 0.25);
+    }
+
+    &.is-lost .ch {
+      fill: #ff9a9d;
+    }
+  }
+
+  .badge {
+    &.err {
+      fill: $red;
+    }
+
+    &.warn {
+      fill: $amber;
+    }
+  }
+
+  .clock {
+    rect {
+      fill: rgba(16, 18, 31, 0.92);
+      stroke: rgba(242, 180, 60, 0.5);
+    }
+
+    text {
+      fill: $ink;
+      font: 700 13px var(--f-mono);
+      font-variant-numeric: tabular-nums;
+    }
+  }
+}
+
+.wiring-tip {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  gap: 3px;
+  min-width: 190px;
+  max-width: 260px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid $line-2;
+  background: rgba(12, 13, 22, 0.96);
+  box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.8);
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+  animation: cfg-tip 160ms ease-out;
+
+  &.is-left {
+    transform: translate(-100%, 0);
+  }
+
+  &.is-below {
+    transform: translate(-50%, 0);
+  }
+
+  b {
+    font: 600 13.5px/1.3 var(--f-display);
+    letter-spacing: -0.02em;
+  }
+
+  span {
+    font: 500 11.5px/1.4 var(--f-mono);
+    color: $ink-2;
+  }
+}
+
+// ---------- что запишет регистратор ----------
+
+.rp-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.rp-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid $line-2;
+
+  span {
+    font: 500 11px/1 var(--f-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: $ink-3;
+  }
+
+  b {
+    font: 600 22px/1 var(--f-display);
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  i {
+    font-style: normal;
+    color: $ink-3;
+  }
+
+  em {
+    font: 700 12.5px/1 var(--f-mono);
+    font-style: normal;
+    padding: 4px 8px;
+    border-radius: 99px;
+  }
+
+  &.is-good {
+    border-color: rgba(68, 193, 138, 0.45);
+
+    em {
+      background: rgba(68, 193, 138, 0.15);
+      color: #8be3b8;
+    }
+  }
+
+  &.is-ok {
+    border-color: rgba(242, 180, 60, 0.45);
+
+    em {
+      background: rgba(242, 180, 60, 0.15);
+      color: #ffd98a;
+    }
+  }
+
+  &.is-bad {
+    border-color: rgba(229, 72, 77, 0.45);
+
+    em {
+      background: rgba(229, 72, 77, 0.15);
+      color: #ffb3b5;
+    }
+  }
+}
+
+.rp-reroll {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid rgba(31, 182, 206, 0.5);
+  border-radius: 99px;
+  background: rgba(31, 182, 206, 0.1);
+  color: #8ff0ff;
+  font: 600 11px/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 160ms ease, transform 120ms ease;
+
+  &:hover {
+    background: rgba(31, 182, 206, 0.18);
+  }
+
+  &:active {
+    transform: scale(0.97);
+
+    svg {
+      transform: rotate(-120deg);
+    }
+  }
+
+  svg {
+    transition: transform 240ms ease;
+  }
+}
+
+.rp-scatter {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  font: 500 11px/1 var(--f-mono);
+  color: $ink-3;
+}
+
+.rp-scatter-track {
+  position: relative;
+  height: 22px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid $line;
+
+  .rp-truth {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    width: 2px;
+    margin-left: -1px;
+    background: $green;
+  }
+
+  b {
+    position: absolute;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    margin: -4px 0 0 -4px;
+    border-radius: 50%;
+    background: rgba(143, 240, 255, 0.55);
+    transition: left 240ms ease;
+
+    &.is-last {
+      width: 11px;
+      height: 11px;
+      margin: -5.5px 0 0 -5.5px;
+      background: #8ff0ff;
+      box-shadow: 0 0 10px #8ff0ff;
+      animation: cfg-pop 300ms ease-out;
+    }
+  }
+}
+
+.rp-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.rp-grid {
+  stroke: rgba(255, 255, 255, 0.06);
+}
+
+.rp-tick {
+  fill: $ink-3;
+  font: 500 11px var(--f-mono);
+}
+
+.rp-lane {
+  transition: opacity 180ms ease;
+
+  &.is-dim {
+    opacity: 0.35;
+  }
+}
+
+.rp-lane-bg {
+  fill: rgba(255, 255, 255, 0.02);
+  stroke: $line;
+}
+
+.rp-lane.is-lost .rp-lane-bg {
+  fill: rgba(229, 72, 77, 0.06);
+  stroke: rgba(229, 72, 77, 0.5);
+  stroke-dasharray: 6 5;
+}
+
+.rp-lane-t {
+  fill: var(--c);
+  font: 700 11px var(--f-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rp-lost-t {
+  fill: #ff9a9d;
+  font: 600 13px var(--f-mono);
+}
+
+.rp-truth-line {
+  fill: none;
+  stroke: rgba(244, 242, 238, 0.35);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+}
+
+.rp-sensor {
+  fill: none;
+  stroke: var(--c);
+  stroke-width: 2;
+  opacity: 0.85;
+}
+
+.rp-steps {
+  fill: none;
+  stroke: var(--c);
+  stroke-width: 1;
+  opacity: 0.45;
+}
+
+.rp-dot {
+  fill: #fff;
+  stroke: var(--c);
+  stroke-width: 1.2;
+}
+
+.rp-level {
+  stroke: rgba(31, 182, 206, 0.45);
+  stroke-dasharray: 3 5;
+}
+
+.rp-level-t {
+  fill: rgba(143, 240, 255, 0.8);
+  font: 700 10.5px var(--f-mono);
+}
+
+.rp-true90 {
+  stroke: $green;
+  stroke-width: 2;
+  stroke-dasharray: 2 4;
+}
+
+.rp-mark {
+  line {
+    stroke-width: 1.5;
+  }
+
+  text {
+    font: 700 11px var(--f-mono);
+  }
+
+  &.is-t0 {
+    line {
+      stroke: $amber;
+    }
+
+    text {
+      fill: $amber;
+    }
+  }
+
+  &.is-t90 {
+    line {
+      stroke: #8ff0ff;
+    }
+
+    text {
+      fill: #8ff0ff;
+    }
+  }
+}
+
+.rp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 10px;
+  font: 500 11px/1.4 var(--f-mono);
+  color: $ink-3;
+
+  span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  i {
+    width: 18px;
+    height: 0;
+    border-top: 2px solid;
+  }
+
+  .l-truth {
+    border-top: 2px dashed rgba(244, 242, 238, 0.45);
+  }
+
+  .l-sensor {
+    border-color: $teal;
+  }
+
+  .l-dot {
+    width: 8px;
+    height: 8px;
+    border: 1.5px solid $teal;
+    border-radius: 50%;
+    background: #fff;
+  }
+
+  .l-true90 {
+    border-top: 2px dotted $green;
+  }
+}
+
+// ---------- водопад задержек ----------
+
+.lw {
+  --label: 260px;
+
+  @media (max-width: 720px) {
+    --label: 140px;
+  }
+}
+
+.lw-scale {
+  position: relative;
+  height: 18px;
+  margin-left: var(--label);
+  font: 500 10.5px/1 var(--f-mono);
+  color: $ink-3;
+
+  span {
+    position: absolute;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+
+  span:first-child {
+    transform: none;
+  }
+
+  span:last-child {
+    transform: translateX(-100%);
+  }
+}
+
+.lw-rows {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  margin-bottom: 18px;
+}
+
+.lw-onepct {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  // позиция по ширине дорожки, а не всего блока с подписями
+  left: calc(var(--label) + (100% - var(--label)) * var(--k, 0));
+  border-left: 2px dashed rgba(244, 242, 238, 0.4);
+  pointer-events: none;
+  z-index: 1;
+
+  span {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    transform: translateX(-50%);
+    font: 700 10.5px/1 var(--f-mono);
+    color: $ink;
+    white-space: nowrap;
+  }
+}
+
+.lw-row {
+  display: grid;
+  grid-template-columns: var(--label) minmax(0, 1fr);
+  align-items: center;
+  gap: 0;
+  padding: 7px 0;
+  border-top: 1px solid $line;
+  transition: opacity 180ms ease;
+
+  &.is-dim {
+    opacity: 0.38;
+  }
+
+  &.is-focus .lw-label b {
+    color: $ink;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+.lw-label {
+  display: grid;
+  gap: 2px;
+  padding-right: 12px;
+
+  b {
+    font: 600 13.5px/1.25 var(--f-body);
+    color: $ink-2;
+  }
+
+  span {
+    font: 500 10.5px/1.3 var(--f-mono);
+    color: $ink-3;
+  }
+}
+
+.lw-track {
+  position: relative;
+  height: 22px;
+
+  i {
+    position: absolute;
+    left: 0;
+    top: 6px;
+    height: 10px;
+    border-radius: 0 6px 6px 0;
+    background: rgba(255, 255, 255, 0.15);
+    transition: width 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  em {
+    position: absolute;
+    top: 50%;
+    transform: translate(8px, -50%);
+    font: 700 11.5px/1 var(--f-mono);
+    font-style: normal;
+    color: $ink-2;
+    white-space: nowrap;
+    transition: left 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+}
+
+.lw-row.k-random .lw-track i {
+  background: $violet;
+}
+
+.lw-row.k-bias .lw-track i {
+  background: $amber;
+}
+
+.lw-row.k-measured .lw-track i {
+  background: linear-gradient(90deg, rgba(31, 182, 206, 0.2), $teal);
+}
+
+.lw-row.k-off .lw-track i {
+  background: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.12) 0 4px, transparent 4px 8px);
+}
+
+.lw-row.is-big {
+  .lw-label b {
+    color: #ffd98a;
+  }
+
+  .lw-track em {
+    color: #ffd98a;
+  }
+}
+
+@keyframes cfg-warn {
+  50% {
+    stroke-opacity: 0.35;
+  }
+}
+
+@keyframes cfg-err {
+  50% {
+    stroke-opacity: 0.25;
+  }
+}
+
+@keyframes cfg-tube {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes cfg-tip {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes cfg-pop {
+  from {
+    transform: scale(0.4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wiring .blk.is-warn > rect,
+  .wiring .blk.is-err > rect,
+  .wiring .tube.is-warn .air,
+  .rp-scatter-track b.is-last,
+  .wiring-tip {
+    animation: none;
+  }
+}
