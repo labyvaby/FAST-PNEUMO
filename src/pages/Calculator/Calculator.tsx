@@ -3,6 +3,7 @@ import { Line } from 'react-chartjs-2';
 import type { ChartData, ChartOptions } from 'chart.js';
 import { AXIS, COLORS, GRID, TOOLTIP } from '../../lib/chartSetup';
 import { PageHead, Seg, Slider } from '../../components/Fields';
+import Calibration from '../../components/Calibration/Calibration';
 import {
   DEFAULT_PARAMS,
   SWEEPS,
@@ -238,6 +239,16 @@ const Calculator: React.FC = () => {
                 onChange={set('friction')}
               />
               <Slider
+                label={<>Натяг пружины <i className='sym'>F0</i></>}
+                value={params.springPreloadN ?? VALVE_CONST.springPreloadN}
+                min={3}
+                max={45}
+                step={0.5}
+                unit='Н'
+                hint='Сильнее пружина — дольше включение и быстрее возврат'
+                onChange={set('springPreloadN')}
+              />
+              <Slider
                 label={<>Напряжение соленоида <i className='sym'>U</i></>}
                 value={params.voltage}
                 min={12}
@@ -376,7 +387,7 @@ const Calculator: React.FC = () => {
                 <p className='kicker' style={{ marginBottom: 10 }}>Принятые константы</p>
                 <ul className='kv'>
                   <li>Диаметр золотника<b>{VALVE_CONST.spoolDiameterMm} мм</b></li>
-                  <li>Пружина F0 / k<b>{VALVE_CONST.springPreloadN} Н / {VALVE_CONST.springRateNmm} Н/мм</b></li>
+                  <li>Пружина F0 / k<b>{params.springPreloadN ?? VALVE_CONST.springPreloadN} Н / {VALVE_CONST.springRateNmm} Н/мм</b></li>
                   <li>Поджатие уплотнений N<b>{VALVE_CONST.sealNormalForceN} Н</b></li>
                   <li>Объём пилотной камеры<b>{VALVE_CONST.pilotVolumeCm3} см³</b></li>
                   <li>Катушка R / L<b>{VALVE_CONST.coilResistanceOhm} Ом / {VALVE_CONST.coilInductanceH} Гн</b></li>
@@ -392,6 +403,8 @@ const Calculator: React.FC = () => {
           </div>
         </div>
       </section>
+
+      <Calibration base={params} onApply={setParams} />
     </>
   );
 };

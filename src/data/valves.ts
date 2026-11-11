@@ -23,6 +23,8 @@ export interface Valve {
   strokeMm?: number;
   pMinBar?: number;
   pMaxBar?: number;
+  /** давление, при котором в даташите указано время переключения, бар изб. (если указано) */
+  testBar?: number;
   /** ссылка на даташит или название документа */
   source: string;
   note?: string;
@@ -88,6 +90,7 @@ export const VALVES: Valve[] = [
     seal: 'другое',
     pMinBar: 1,
     pMaxBar: 7,
+    testBar: 5,
     source: 'https://smcusa.com/products/SY3000-5-Port-Solenoid-Valve-All-Types~50600',
     note: 'SMC даёт одно время отклика для серии: ≤ 16 мс при 0.5 МПа, без индикатора и защиты от перенапряжения — здесь это верхняя граница и для вкл, и для выкл. Давление — для внутреннего пилота. Серия выпускается с эластичным и металлическим уплотнением.',
   },

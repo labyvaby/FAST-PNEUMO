@@ -25,6 +25,8 @@ export interface ValveParams {
   friction: number;
   /** напряжение на катушке, В */
   voltage: number;
+  /** предварительный натяг возвратной пружины, Н (по умолчанию VALVE_CONST.springPreloadN) */
+  springPreloadN?: number;
 }
 
 export const DEFAULT_PARAMS: ValveParams = {
@@ -34,6 +36,7 @@ export const DEFAULT_PARAMS: ValveParams = {
   channelMm: 1,
   friction: 0.15,
   voltage: 24,
+  springPreloadN: 8,
 };
 
 export const VALVE_CONST = {
@@ -102,7 +105,7 @@ export const spoolArea = () => (Math.PI * (VALVE_CONST.spoolDiameterMm / 1000) *
 
 export const minSupplyBar = (params: ValveParams) => {
   const forceN =
-    VALVE_CONST.springPreloadN +
+    (params.springPreloadN ?? VALVE_CONST.springPreloadN) +
     VALVE_CONST.springRateNmm * params.strokeMm +
     params.friction * VALVE_CONST.sealNormalForceN;
   return forceN / spoolArea() / 1e5;
@@ -155,7 +158,7 @@ export const simulate = (params: ValveParams, withSeries = true): SimResult => {
     air += orificeMassFlow(pSupply, p, orifice, c.dischargeCoef, c.tempK) * dt;
 
     const fPressure = (p - P_ATM) * area;
-    const fSpring = c.springPreloadN + k * x;
+    const fSpring = (params.springPreloadN ?? c.springPreloadN) + k * x;
     const net = fPressure - fSpring;
 
     if (tEnd === null) {
@@ -237,8 +240,8 @@ export const simulateReturn = (params: ValveParams, withSeries = true): SimResul
   const area = spoolArea();
   const stroke = params.strokeMm / 1000;
   const fFriction = params.friction * c.sealNormalForceN;
-  if (c.springPreloadN <= fFriction) {
-    return { ...empty, ok: false, reason: `Трение ${fFriction.toFixed(1)} Н не меньше предварительного натяга пружины ${c.springPreloadN} Н: золотник не вернётся до упора.` };
+  if ((params.springPreloadN ?? c.springPreloadN) <= fFriction) {
+    return { ...empty, ok: false, reason: `Трение ${fFriction.toFixed(1)} Н не меньше предварительного натяга пружины ${(params.springPreloadN ?? c.springPreloadN)} Н: золотник не вернётся до упора.` };
   }
 
   const tau = c.coilInductanceH / c.coilResistanceOhm;
@@ -275,7 +278,7 @@ export const simulateReturn = (params: ValveParams, withSeries = true): SimResul
     air = Math.max(0, air - orificeMassFlow(p, P_ATM, orifice, c.dischargeCoef, c.tempK) * dt);
 
     // положительное back — сила, возвращающая золотник к x = 0
-    const back = c.springPreloadN + k * x - (p - P_ATM) * area;
+    const back = (params.springPreloadN ?? c.springPreloadN) + k * x - (p - P_ATM) * area;
 
     if (tEnd === null) {
       if (!moving && back > fFriction) {
