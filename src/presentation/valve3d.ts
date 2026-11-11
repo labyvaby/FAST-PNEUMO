@@ -154,6 +154,13 @@ export const createValve = (): Valve3D => {
   const edgeMat = new THREE.LineBasicMaterial({ color: 0x4a5285, transparent: true, opacity: 0.75 });
   const coverEdgeMat = new THREE.LineBasicMaterial({ color: 0x1fb6ce, transparent: true, opacity: 0.45 });
   const wireable: THREE.MeshStandardMaterial[] = [bodyMat, cutMat, floorMat, darkMat, steelMat, rodMat, pilotPistonMat, coilMat, fittingMat, silencerMat];
+  // Линии рёбер лежат точно на гранях. Грани чуть отодвигаем в буфере глубины,
+  // иначе линия и грань спорят за пиксель и ребро мерцает.
+  wireable.forEach((material) => {
+    material.polygonOffset = true;
+    material.polygonOffsetFactor = 1;
+    material.polygonOffsetUnits = 1;
+  });
 
   const gasMat = (color: THREE.Color, opacity: number) =>
     new THREE.MeshBasicMaterial({ color: color.clone(), transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending });
@@ -283,7 +290,7 @@ export const createValve = (): Valve3D => {
   const tubeAPts = [v(-1.2, 2.0), v(-1.2, 2.6), v(-1.9, 3.2), v(-2.2, 3.45), v(-2.2, 3.7)];
   const tubeBPts = tubeAPts.map((p) => v(-p.x, p.y));
   const tubeMat = (color: THREE.Color) =>
-    new THREE.MeshStandardMaterial({ color: color.clone(), emissive: color.clone(), emissiveIntensity: 0.3, metalness: 0.1, roughness: 0.4, transparent: true, opacity: 0.9 });
+    new THREE.MeshStandardMaterial({ color: color.clone(), emissive: color.clone(), emissiveIntensity: 0.3, metalness: 0.1, roughness: 0.4 });
   const tubeAMat = tubeMat(EXHAUST);
   const tubeBMat = tubeMat(TEAL);
   root.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(tubeAPts, false, 'catmullrom', 0.2), 40, 0.09, 12), tubeAMat));
@@ -479,6 +486,17 @@ export const createValve = (): Valve3D => {
       springMat.wireframe = wantWire;
     }
   };
+
+  // Порядок прозрачных слоёв задан жёстко: линии и светящийся воздух, потом частицы, потом стекло.
+  // Без этого three.js сортирует их по расстоянию до камеры, порядок меняется при покачивании
+  // камеры и движении золотника, и яркость под стеклом скачет.
+  root.traverse((object) => {
+    const material = (object as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+    if (!material || Array.isArray(material) || !material.transparent) return;
+    if (material === glassMat || material === barrelMat) object.renderOrder = 3;
+    else if (object instanceof THREE.Points) object.renderOrder = 2;
+    else object.renderOrder = 1;
+  });
 
   const anchors: Record<AnchorId, () => THREE.Vector3> = {
     portR: () => tmp.set(-2.4, -1.02, 0.02),

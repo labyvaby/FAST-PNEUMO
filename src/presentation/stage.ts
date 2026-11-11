@@ -60,7 +60,9 @@ export const createStage = (canvas: HTMLCanvasElement, calloutRoot: HTMLElement)
   const valve = createValve();
   scene.add(valve.group);
 
-  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 200);
+  // ближняя плоскость отодвинута: камера не подходит к модели ближе 9 единиц,
+  // а точность буфера глубины от этого вырастает на порядок
+  const camera = new THREE.PerspectiveCamera(30, 1, 1, 300);
 
   const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 }));
   composer.addPass(new RenderPass(scene, camera));
@@ -82,6 +84,18 @@ export const createStage = (canvas: HTMLCanvasElement, calloutRoot: HTMLElement)
   let height = 1;
   let mobile = false;
   let distanceScale = 1;
+  // Качество снижается ступенями, если кадры идут медленно:
+  // 0 — полное, 1 — без повышенного разрешения, 2 — ещё и без свечения.
+  let tier = 0;
+
+  const applyQuality = () => {
+    // выше 1.5 картинка почти не меняется, а свечение и сглаживание обходятся вдвое дороже
+    const ratio = Math.min(window.devicePixelRatio || 1, tier === 0 ? 1.5 : 1);
+    renderer.setPixelRatio(ratio);
+    renderer.setSize(width, height, false);
+    composer.setPixelRatio(ratio);
+    composer.setSize(width, height);
+  };
 
   const resize = () => {
     width = window.innerWidth;
@@ -92,12 +106,7 @@ export const createStage = (canvas: HTMLCanvasElement, calloutRoot: HTMLElement)
     // на узком экране камера отъезжает — туман отодвигаем вместе с ней
     fog.near = 30 * distanceScale;
     fog.far = 70 * distanceScale;
-    // выше 1.5 картинка почти не меняется, а свечение и сглаживание обходятся вдвое дороже
-    const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
-    renderer.setPixelRatio(ratio);
-    renderer.setSize(width, height, false);
-    composer.setPixelRatio(ratio);
-    composer.setSize(width, height);
+    applyQuality();
     camera.aspect = aspect;
     // модель уходит из-под текста: на широком экране — вправо, на узком — вверх
     if (mobile) camera.setViewOffset(width, height, 0, height * 0.2, width, height);
@@ -120,8 +129,8 @@ export const createStage = (canvas: HTMLCanvasElement, calloutRoot: HTMLElement)
   const fx: Fx = { ...BASE_FX };
   let mode: Mode = SHOTS[0].mode;
   let clock = 0;
-  // замер скорости: если первые кадры идут медленно, отключаем свечение и снижаем разрешение
-  let lite = false;
+  // замер скорости кадров для ступеней качества; первые кадры пропускаем — в них компилируются шейдеры
+  let warmup = 40;
   let measured = 0;
   let measuredTime = 0;
   let lastStamp = 0;
@@ -176,17 +185,25 @@ export const createStage = (canvas: HTMLCanvasElement, calloutRoot: HTMLElement)
     const gap = stamp - lastStamp;
     lastStamp = stamp;
     // паузы длиннее 250 мс — это фоновая вкладка, а не медленная видеокарта
-    if (!lite && measured < 90 && gap > 0 && gap < 250) {
-      measured++;
-      measuredTime += gap;
-      if (measured === 90 && measuredTime / measured > 42) {
-        lite = true;
-        renderer.setPixelRatio(1);
-        renderer.setSize(width, height, false);
+    if (tier < 2 && gap > 0 && gap < 250) {
+      if (warmup > 0) warmup--;
+      else {
+        measured++;
+        measuredTime += gap;
+        if (measured === 60) {
+          // в среднем медленнее 24 мс на кадр (ниже ~42 кадров в секунду) — спускаемся на ступень
+          if (measuredTime / measured > 24) {
+            tier++;
+            applyQuality();
+            warmup = 40;
+          }
+          measured = 0;
+          measuredTime = 0;
+        }
       }
     }
 
-    if (mobile || lite) renderer.render(scene, camera);
+    if (mobile || tier >= 2) renderer.render(scene, camera);
     else composer.render(dt);
 
     return { state, hud: active.hud };
