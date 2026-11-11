@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="ru">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#05060B" />
+  <title>FAST-PNEUMO — 3D-презентация проекта</title>
+  <meta name="description" content="Быстродействие пневматического распределителя 5/2: 3D-разбор переключения по физической модели стенда." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300..900&family=Onest:wght@400..700&family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <script type="module" crossorigin src="/FAST-PNEUMO/assets/presentation-BcYFSbMl.js"></script>
+  <link rel="modulepreload" crossorigin href="/FAST-PNEUMO/assets/valveModel-DoVs9zmu.js">
+  <link rel="stylesheet" crossorigin href="/FAST-PNEUMO/assets/presentation-Dmhs4a9h.css">
+</head>
+
+<body>
+  <div class="preloader" id="preloader" aria-hidden="true"><span>FAST-PNEUMO</span></div>
+
+  <canvas id="scene" aria-hidden="true"></canvas>
+  <div class="veil" aria-hidden="true"></div>
+  <div class="callouts" id="callouts" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <a class="brand" href="#1" data-goto="0" aria-label="FAST-PNEUMO, к началу">
+      <svg viewBox="0 0 30 30" aria-hidden="true">
+        <defs>
+          <linearGradient id="ring" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0" stop-color="#44C18A" /><stop offset=".4" stop-color="#1FB6CE" /><stop offset=".75" stop-color="#3E74F0" /><stop offset="1" stop-color="#8B6CFF" />
+          </linearGradient>
+        </defs>
+        <circle cx="15" cy="15" r="11.5" fill="none" stroke="url(#ring)" stroke-width="4" />
+      </svg>
+      <span>FAST-PNEUMO</span>
+    </a>
+    <nav><a class="btn btn-ghost" href="../">Открыть стенд</a></nav>
+  </header>
+
+  <nav class="rail" id="rail" aria-label="Слайды"></nav>
+  <div class="progress" aria-hidden="true"><i id="progressBar"></i></div>
+  <footer class="counter" aria-live="polite">
+    <span><b id="counterNow">01</b><i>/</i><span id="counterAll">14</span></span>
+    <span class="counter-name" id="counterName">Начало</span>
+  </footer>
+  <div class="hint" id="hint" aria-hidden="true">Листайте вниз</div>
+
+  <aside class="hud" id="hud" aria-hidden="true">
+    <div class="hud-head"><span data-hud="slow">замедлено</span><b data-hud="time">t = 0 мс</b></div>
+    <p class="hud-phase" data-hud="phase">исходное положение</p>
+    <div class="hud-bar" data-hud="bar"><i></i><i></i><i></i><i></i><span data-hud="cursor"></span></div>
+    <div class="hud-keys"><span class="k-coil">ток</span><span class="k-arm">якорь</span><span class="k-pil">камера</span><span class="k-pos">ход</span></div>
+    <canvas></canvas>
+    <div class="hud-keys hud-scope-keys"><span class="k-coil">команда</span><span class="k-cur">ток</span><span class="k-pil">давление</span><span class="k-pos">ход золотника</span></div>
+  </aside>
+
+  <main class="deck" id="deck">
+
+    <!-- 1 -->
+    <section class="slide" data-name="Начало">
+      <div class="copy">
+        <p class="pre">Веб-стенд · распределитель 5/2</p>
+        <h1 class="title title-hero">Быстродействие пневматического <span class="grad">распределителя</span></h1>
+        <p class="lead">Модель, которая показывает каждую миллисекунду переключения — от катушки пилота до упора золотника.</p>
+        <p class="meta">FAST-PNEUMO · 2026</p>
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section class="slide" data-name="Задача">
+      <div class="copy">
+        <p class="pre"><b>01</b> · Задача</p>
+        <h2 class="title">Миллисекунды распределителя задают такт всей машины</h2>
+        <p class="lead">Распределитель направляет сжатый воздух в цилиндр. Пока золотник не переключился, цилиндр стоит.</p>
+        <dl class="facts">
+          <div><dt class="c-teal">1,7–40 мс</dt><dd>разброс времени у моделей из каталога</dd></div>
+          <div><dt class="c-amber">2 см</dt><dd>промах на ленте 2 м/с при ошибке в 10 мс</dd></div>
+          <div><dt class="c-green">1 цифра</dt><dd>в даташите, и только для своих условий</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section class="slide" data-name="Цель">
+      <div class="copy">
+        <p class="pre"><b>01</b> · Цель</p>
+        <h2 class="title">Стенд, который отвечает на вопрос «а если»</h2>
+        <p class="lead">Другое давление, длинный шланг, тяжёлый золотник — даташит молчит, модель считает.</p>
+        <ul class="points">
+          <li><b>Модель переключения:</b> катушка, пилот, золотник — прямой и обратный ход</li>
+          <li><b>Калибровка</b> по даташитам реальных распределителей</li>
+          <li><b>Учёт стенда:</b> подводящая линия, приборы, погрешность</li>
+          <li class="d-only"><b>Наглядность:</b> живой разрез, осциллограф, отчёты</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section class="slide" data-name="Модель">
+      <div class="copy">
+        <p class="pre"><b>02</b> · Модель</p>
+        <h2 class="title">Три фазы одного переключения</h2>
+        <ol class="steps">
+          <li class="k-amber"><b>Катушка</b>ток растёт, якорь пилота трогается</li>
+          <li class="k-violet"><b>Пилот</b>камера наполняется через канал, пока давление не пересилит пружину</li>
+          <li><b>Золотник</b>давление двигает массу до упора</li>
+        </ol>
+        <p class="note">Справа — замедленный повтор. Золотник едет по расчёту модели: шаг интегрирования 2 мкс.</p>
+      </div>
+    </section>
+
+    <!-- 5 -->
+    <section class="slide" data-name="Цифры">
+      <div class="copy">
+        <p class="pre"><b>02</b> · Типовой распределитель · 6 бар · 24 В</p>
+        <h2 class="title">Куда уходят 8,8 мс прямого хода</h2>
+        <p class="lead">Почти половина — движение золотника. Обратный ход медленнее: возвращает только пружина.</p>
+        <dl class="facts">
+          <div><dt>8,6 мс</dt><dd>прямой ход, до 90 % хода</dd></div>
+          <div><dt>22,2 мс</dt><dd>обратный ход, до 10 % хода</dd></div>
+          <div><dt>2,1 бар</dt><dd>ниже золотник не дойдёт до упора</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section class="slide" data-name="Калибровка">
+      <div class="copy">
+        <p class="pre"><b>02</b> · Калибровка</p>
+        <h2 class="title">Модель подстраивается под даташит</h2>
+        <p class="lead">Два параметра под два времени: канал пилота <b>d</b> задаёт скорость пневматики, натяг пружины <b>F0</b> — соотношение включения и выключения.</p>
+        <table class="tbl">
+          <tr><th>Распределитель</th><th class="num">вкл</th><th class="num">выкл</th><th>Модель</th></tr>
+          <tr><td>Festo VUVG-L14</td><td class="num">13</td><td class="num">40</td><td class="ok">✓ ошибка &lt; 0,1 %</td></tr>
+          <tr><td>Festo VUVS-L20</td><td class="num">20</td><td class="num">29</td><td class="ok">✓ ошибка &lt; 0,1 %</td></tr>
+          <tr><td>SMC SY3000</td><td class="num">16</td><td class="num">16</td><td class="ok">✓ ошибка &lt; 0,1 %</td></tr>
+          <tr class="d-only"><td>Festo MHE2</td><td class="num">1,9</td><td class="num">1,7</td><td class="out">вне модели: седельный</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section class="slide" data-name="Установка">
+      <div class="copy">
+        <p class="pre"><b>03</b> · Установка</p>
+        <h2 class="title">Одна <span class="grad">установка</span> связывает все разделы</h2>
+        <ol class="steps steps-inline">
+          <li><b>Распределитель</b> — выбран в каталоге, его даташит стал эталоном</li>
+          <li><b>Калибровка</b> — подобранные d и F0 записаны в установку</li>
+          <li><b>Линия</b> — на клапан приходит давление после потерь</li>
+          <li><b>Стенд</b> — считает именно эту конфигурацию</li>
+          <li class="d-only"><b>Отчёты</b> — запуск помнит, на чём он снят</li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- 8 -->
+    <section class="slide" data-name="Разделы">
+      <div class="copy">
+        <p class="pre"><b>03</b> · Сайт</p>
+        <h2 class="title">Семь разделов</h2>
+        <ul class="chips">
+          <li><b>Стенд</b>серия переключений, разрез, tср</li>
+          <li><b>Расчёт</b>фазы, зависимости, калибровка</li>
+          <li><b>Каталог</b>модели из даташитов</li>
+          <li><b>Конфигуратор</b>приборы и погрешность</li>
+          <li><b>Утилиты</b>Cv · Kv · Qn и потери в линии</li>
+          <li><b>Методика</b>шесть шагов и осциллограф</li>
+          <li class="d-only"><b>Отчёты</b>журнал запусков, CSV</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 9 -->
+    <section class="slide" data-name="Стенд">
+      <div class="copy">
+        <p class="pre"><b>03</b> · Стенд</p>
+        <h2 class="title">Живой разрез распределителя</h2>
+        <p class="lead">Питание P идёт в A или B, второй выход стравливается в R или S. Что открыто — решают три пояска золотника.</p>
+        <ul class="points">
+          <li><b>Воздух виден:</b> подача, выхлоп и управление — частицами</li>
+          <li><b>Замедленный повтор</b> с фазами на таймлайне и отметкой tср</li>
+          <li class="d-only"><b>Разброс как в жизни:</b> трение ±15 %, напряжение ±5 % от цикла к циклу</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 10 -->
+    <section class="slide" data-name="Конфигуратор">
+      <div class="copy">
+        <p class="pre"><b>03</b> · Конфигуратор</p>
+        <h2 class="title">Где теряются миллисекунды</h2>
+        <p class="lead">Сигнал идёт к катушке через приборы стенда, и каждый добавляет задержку. Шкала логарифмическая.</p>
+        <ul class="bars">
+          <li><span>Генератор</span><div class="track"><i style="width:2%"></i><span>1 мкс</span></div></li>
+          <li><span>MOSFET-ключ</span><div class="track"><i style="width:20%"></i><span>10 мкс</span></div></li>
+          <li><span>Микроконтроллер</span><div class="track"><i style="width:26%"></i><span>20 мкс</span></div></li>
+          <li class="slow"><span>Твердотельное реле</span><div class="track"><i style="width:54%"></i><span>0,5 мс</span></div></li>
+          <li class="slow d-only"><span>Цикл ПЛК</span><div class="track"><i style="width:68%"></i><span>5 мс</span></div></li>
+          <li class="slow"><span>Электромех. реле</span><div class="track"><i style="width:72%"></i><span>8 мс</span></div></li>
+        </ul>
+        <p class="note">Жёлтое — больше 1 % от времени срабатывания. Реле на 8 мс съедает почти столько же, сколько само переключение.</p>
+      </div>
+    </section>
+
+    <!-- 11 -->
+    <section class="slide" data-name="Методика">
+      <div class="copy">
+        <p class="pre"><b>03</b> · Методика</p>
+        <h2 class="title">Измерьте tср сами</h2>
+        <ol class="steps steps-inline">
+          <li><b>Импульс</b> — подаём команду, фиксируем t0</li>
+          <li><b>Регистрация</b> — давление, расход и ход с постоянным шагом</li>
+          <li><b>Порог</b> — 90 % хода прямого, 10 % обратного</li>
+          <li class="d-only"><b>Отчёт</b> — среднее, минимум и максимум по серии</li>
+        </ol>
+        <p class="formula">tср = t90 − t0</p>
+      </div>
+    </section>
+
+    <!-- 12 -->
+    <section class="slide" data-name="Реализация">
+      <div class="copy">
+        <p class="pre"><b>04</b> · Реализация</p>
+        <h2 class="title">Всё считается в браузере</h2>
+        <p class="lead">React, TypeScript и Vite. Модель интегрируется прямо на странице, состояние хранится в localStorage.</p>
+        <dl class="facts">
+          <div><dt class="c-teal">0</dt><dd>серверов</dd></div>
+          <div><dt class="c-violet">2 мкс</dt><dd>шаг интегрирования</dd></div>
+          <div><dt class="c-amber">1</dt><dd>команда для публикации</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <!-- 13 -->
+    <section class="slide" data-name="Итоги">
+      <div class="copy">
+        <p class="pre"><b>04</b> · Итоги</p>
+        <h2 class="title">Что сделано и что дальше</h2>
+        <ul class="points">
+          <li><b>Физическая модель</b> прямого и обратного хода</li>
+          <li><b>Калибровка:</b> 3 из 4 моделей каталога — с ошибкой &lt; 0,1 %</li>
+          <li><b>Единая установка:</b> от каталога до отчёта</li>
+        </ul>
+        <ul class="points points-next">
+          <li>Проверить модель на физическом стенде</li>
+          <li class="d-only">Расширить каталог: бистабильные, 5/3 и 3/2</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 14 -->
+    <section class="slide" data-name="Финал">
+      <div class="copy">
+        <p class="pre">FAST-PNEUMO</p>
+        <h2 class="title title-hero">Спасибо!</h2>
+        <p class="lead">Вопросы — и стенд вживую.</p>
+        <div class="actions">
+          <a class="btn btn-solid" href="../">Открыть стенд</a>
+          <button class="btn btn-ghost" type="button" data-goto="0">К началу</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+</body>
+
+</html>
