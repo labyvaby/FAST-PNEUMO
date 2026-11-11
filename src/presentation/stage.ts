@@ -92,7 +92,8 @@ export const createStage = (canvas: HTMLCanvasElement, calloutRoot: HTMLElement)
     // на узком экране камера отъезжает — туман отодвигаем вместе с ней
     fog.near = 30 * distanceScale;
     fog.far = 70 * distanceScale;
-    const ratio = Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 2);
+    // выше 1.5 картинка почти не меняется, а свечение и сглаживание обходятся вдвое дороже
+    const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
     renderer.setPixelRatio(ratio);
     renderer.setSize(width, height, false);
     composer.setPixelRatio(ratio);

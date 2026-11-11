@@ -143,10 +143,12 @@ export const createValve = (): Valve3D => {
   const coilMat = new THREE.MeshStandardMaterial({ color: 0xb46a22, metalness: 0.75, roughness: 0.35, emissive: AMBER, emissiveIntensity: 0.05 });
   const fittingMat = new THREE.MeshStandardMaterial({ color: 0x9ea3bb, metalness: 0.92, roughness: 0.28 });
   const silencerMat = new THREE.MeshStandardMaterial({ color: 0xa98a48, metalness: 0.8, roughness: 0.45 });
-  const glassMat = new THREE.MeshPhysicalMaterial({
-    color: 0xa8dcff, metalness: 0, roughness: 0.05, transparent: true, opacity: 0.075, depthWrite: false, side: THREE.DoubleSide,
+  // крышка рисуется только наружными гранями: задняя грань лежала бы в плоскости разреза
+  // и мерцала из-за совпадения глубины
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0xa8dcff, metalness: 0, roughness: 0.05, transparent: true, opacity: 0.075, depthWrite: false,
   });
-  const barrelMat = new THREE.MeshPhysicalMaterial({
+  const barrelMat = new THREE.MeshStandardMaterial({
     color: 0xbfe6ff, metalness: 0, roughness: 0.08, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide,
   });
   const edgeMat = new THREE.LineBasicMaterial({ color: 0x4a5285, transparent: true, opacity: 0.75 });
@@ -178,7 +180,7 @@ export const createValve = (): Valve3D => {
 
   // ---------- стеклянная крышка ----------
   const cover = new THREE.Group();
-  const coverGeo = boxGeo(X0, X1, -1.5, 1.5, 0, 1.2);
+  const coverGeo = boxGeo(X0, X1, -1.5, 1.5, 0.012, 1.2);
   cover.add(new THREE.Mesh(coverGeo, glassMat));
   cover.add(new THREE.LineSegments(new THREE.EdgesGeometry(coverGeo), coverEdgeMat));
   root.add(cover);
@@ -210,16 +212,17 @@ export const createValve = (): Valve3D => {
   root.add(spring);
 
   // ---------- воздух в каналах ----------
+  // объёмы чуть уже самих каналов: совпадающие грани мерцают
   const gasAMat = gasMat(EXHAUST, 0.3);
   const gasBMat = gasMat(TEAL, 0.3);
   const gasPMat = gasMat(TEAL, 0.34);
   const gasRMat = gasMat(EXHAUST, 0.2);
   const gasSMat = gasMat(EXHAUST, 0.2);
-  root.add(new THREE.Mesh(boxGeo(-1.45, -0.95, 0.5, 1.5, -0.46, -0.02), gasAMat));
-  root.add(new THREE.Mesh(boxGeo(0.95, 1.45, 0.5, 1.5, -0.46, -0.02), gasBMat));
-  root.add(new THREE.Mesh(boxGeo(-0.25, 0.25, -1.5, -0.5, -0.46, -0.02), gasPMat));
-  root.add(new THREE.Mesh(boxGeo(-2.65, -2.15, -1.5, -0.5, -0.46, -0.02), gasRMat));
-  root.add(new THREE.Mesh(boxGeo(2.15, 2.65, -1.5, -0.5, -0.46, -0.02), gasSMat));
+  root.add(new THREE.Mesh(boxGeo(-1.435, -0.965, 0.5, 1.49, -0.46, -0.02), gasAMat));
+  root.add(new THREE.Mesh(boxGeo(0.965, 1.435, 0.5, 1.49, -0.46, -0.02), gasBMat));
+  root.add(new THREE.Mesh(boxGeo(-0.235, 0.235, -1.49, -0.5, -0.46, -0.02), gasPMat));
+  root.add(new THREE.Mesh(boxGeo(-2.635, -2.165, -1.49, -0.5, -0.46, -0.02), gasRMat));
+  root.add(new THREE.Mesh(boxGeo(2.165, 2.635, -1.49, -0.5, -0.46, -0.02), gasSMat));
 
   // пилотная камера и канал пилота
   const pilotGasMat = gasMat(VIOLET, 0.1);
@@ -227,7 +230,7 @@ export const createValve = (): Valve3D => {
   pilotGas.position.x = BORE_X0;
   root.add(pilotGas);
   const pilotChannelMat = gasMat(VIOLET, 0.1);
-  root.add(new THREE.Mesh(boxGeo(-5.12, -4.88, 0.5, 1.5, -0.46, -0.02), pilotChannelMat));
+  root.add(new THREE.Mesh(boxGeo(-5.105, -4.895, 0.5, 1.49, -0.46, -0.02), pilotChannelMat));
 
   // ---------- пилот: катушка ----------
   const coil = new THREE.Group();
