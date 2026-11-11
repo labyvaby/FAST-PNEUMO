@@ -105,18 +105,26 @@ const start = () => {
   const fromHash = Number(window.location.hash.replace('#', ''));
   goTo(Number.isFinite(fromHash) && fromHash > 1 ? fromHash - 1 : 0, false);
 
-  let last = performance.now();
+  // Отметка времени кадра бывает раньше, чем performance.now() в момент запуска,
+  // поэтому отсчёт начинаем с первого кадра и не допускаем отрицательного шага.
+  let last: number | null = null;
   const tick = (now: number) => {
-    const dt = Math.min(0.05, (now - last) / 1000);
+    requestAnimationFrame(tick);
+    const dt = last === null ? 0 : Math.min(0.05, Math.max(0, (now - last) / 1000));
     last = now;
     const p = progress();
     setCurrent(Math.min(slides.length - 1, Math.max(0, Math.round(p))));
     progressBar.style.transform = `scaleX(${Math.min(1, p / (slides.length - 1))})`;
-    if (stage) {
+    if (!stage) return;
+    try {
       const info = stage.frame(p, dt, now / 1000);
       hud.update(info.state, info.hud);
+    } catch (error) {
+      // сбой 3D-сцены не должен останавливать слайды: дальше показываем только текст
+      stage = null;
+      document.documentElement.classList.add('no-webgl');
+      console.error('3D-сцена остановлена', error);
     }
-    requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
   preloader.classList.add('done');

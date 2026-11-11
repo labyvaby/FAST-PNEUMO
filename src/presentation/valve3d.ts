@@ -354,11 +354,12 @@ export const createValve = (): Valve3D => {
     flow.material.opacity = opacity;
     flow.points.visible = opacity > 0.01;
     if (!flow.points.visible) return;
-    flow.phase = (flow.phase + speed * dt) % 1;
+    flow.phase = (flow.phase + speed * Math.max(0, dt)) % 1;
     const attribute = flow.points.geometry.getAttribute('position') as THREE.BufferAttribute;
     const count = attribute.count;
     for (let i = 0; i < count; i++) {
-      const u = (flow.seeds[i * 4] + flow.phase) % 1;
+      // getPointAt падает на значениях вне [0, 1], поэтому зажимаем
+      const u = Math.min(0.9999, Math.max(0, (flow.seeds[i * 4] + flow.phase) % 1));
       flow.curve.getPointAt(u, tmp);
       attribute.setXYZ(i, tmp.x + flow.seeds[i * 4 + 1], tmp.y + flow.seeds[i * 4 + 2], tmp.z + flow.seeds[i * 4 + 3]);
     }
@@ -453,7 +454,7 @@ export const createValve = (): Valve3D => {
     // сигнал от контроллера
     if (state.command && !prevCommand) pulseT = 0;
     prevCommand = state.command;
-    pulseT = Math.min(1, pulseT + dt / 0.45);
+    pulseT = Math.min(1, Math.max(0, pulseT + dt / 0.45));
     scaleAbout(signalRig, SIGNAL_PIVOT, fx.signal);
     pulse.visible = pulseT < 1;
     wireCurve.getPointAt(pulseT, pulse.position);

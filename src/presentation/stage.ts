@@ -87,7 +87,7 @@ export const createStage = (canvas: HTMLCanvasElement, calloutRoot: HTMLElement)
     width = window.innerWidth;
     height = window.innerHeight;
     const aspect = width / height;
-    mobile = width < 900 || aspect < 1.1;
+    mobile = width < 700 || aspect < 1.1;
     distanceScale = mobile ? Math.max(1, 1.05 / aspect) : Math.max(1, 1.6 / aspect);
     // на узком экране камера отъезжает — туман отодвигаем вместе с ней
     fog.near = 30 * distanceScale;

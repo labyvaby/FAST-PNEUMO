@@ -134,8 +134,8 @@ ul, ol { padding: 0; list-style: none; }
 
 .pre { font: 500 12px/1.4 var(--f-mono); letter-spacing: .16em; text-transform: uppercase; color: var(--teal); }
 .pre b { color: var(--ink); font-weight: 700; }
-.title { font: 600 clamp(27px, 3.3vw, 50px)/1.08 var(--f-display); letter-spacing: -.035em; text-wrap: balance; }
-.title-hero { font-size: clamp(32px, 3.9vw, 60px); line-height: 1.05; }
+.title { font: 600 clamp(20px, min(3.3vw, 6.4vh), 50px)/1.08 var(--f-display); letter-spacing: -.035em; text-wrap: balance; }
+.title-hero { font-size: clamp(22px, min(3.9vw, 7.6vh), 60px); line-height: 1.05; }
 .title .grad, .facts dt.grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .lead { font-size: clamp(15px, 1.25vw, 19px); line-height: 1.55; color: var(--ink-2); max-width: 56ch; }
 .meta { font: 500 12px/1.4 var(--f-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
@@ -214,7 +214,7 @@ ul, ol { padding: 0; list-style: none; }
 .hud.with-scope .hud-scope-keys { display: flex; }
 
 /* ---------- узкие экраны: модель сверху, текст снизу ---------- */
-@media (max-width: 899px), (max-aspect-ratio: 11/10) {
+@media (max-width: 699px), (max-aspect-ratio: 11/10) {
   .veil { background: linear-gradient(0deg, rgba(5,6,11,.97) 0%, rgba(5,6,11,.9) 40%, rgba(5,6,11,0) 64%), linear-gradient(180deg, rgba(5,6,11,.7), rgba(5,6,11,0) 12%); }
   .slide { align-items: flex-end; padding: 72px var(--gut) 64px; }
   .copy { width: 100%; gap: 14px; }
@@ -236,6 +236,35 @@ ul, ol { padding: 0; list-style: none; }
   .hud { right: 12px; left: 12px; top: 64px; bottom: auto; width: auto; padding: 10px 12px; }
   .hud canvas, .hud.with-scope canvas, .hud.with-scope .hud-scope-keys { display: none; }
   .btn { min-height: 40px; padding: 0 14px; font-size: 11px; }
+}
+
+/* ---------- низкое окно: убираем второстепенное, чтобы слайд помещался ---------- */
+@media (max-height: 560px) and (min-width: 700px) and (min-aspect-ratio: 11/10) {
+  .topbar { padding-top: 10px; padding-bottom: 10px; }
+  .slide { padding: 56px var(--gut) 40px; }
+  .copy { gap: 10px; }
+  .lead { font-size: 13.5px; line-height: 1.45; }
+  .note, .meta, .d-only { display: none !important; }
+  .facts > div { padding: 8px 12px 10px; }
+  .facts dt { font-size: 18px; }
+  .facts dd { margin-top: 3px; font-size: 12px; }
+  .points { gap: 5px; }
+  .points li { font-size: 13.5px; }
+  .steps { gap: 5px; }
+  .steps li { padding: 5px 12px 5px 44px; font-size: 13px; }
+  .steps li::before { left: 12px; top: 6px; }
+  .steps li b { display: inline; margin-right: 6px; }
+  .chips { gap: 5px; }
+  .chips li { padding: 5px 10px; font-size: 12px; }
+  .bars { gap: 4px; }
+  .bars li { font-size: 12.5px; }
+  .tbl { font-size: 12.5px; }
+  .tbl th { padding-bottom: 3px; }
+  .tbl td { padding: 4px 10px 4px 0; }
+  .formula { font-size: 15px; }
+  .counter { bottom: 12px; }
+  .hint { bottom: 12px; }
+  .hud { right: 48px; bottom: 30px; transform-origin: right bottom; scale: .78; }
 }
 
 @media (prefers-reduced-motion: reduce) {
