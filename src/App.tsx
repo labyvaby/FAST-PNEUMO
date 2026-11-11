@@ -45,7 +45,10 @@ function App() {
       <footer className='foot'>
         <div className='wrap foot-in'>
           <p>Стенд исследования быстродействия · распределитель 5/2</p>
-          <p>Инженерная модель · данные рассчитаны в браузере</p>
+          <p>
+            Инженерная модель · данные рассчитаны в браузере ·{' '}
+            <a href={`${import.meta.env.BASE_URL}presentation/`}>3D-презентация</a>
+          </p>
         </div>
       </footer>
     </>
