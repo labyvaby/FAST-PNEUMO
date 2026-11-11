@@ -38,10 +38,75 @@ const dots = slides.map((slide, index) => {
 const slideHeight = () => deck.scrollHeight / slides.length;
 const progress = () => window.scrollY / slideHeight();
 
-function goTo(index: number, smooth = true) {
-  const target = Math.min(slides.length - 1, Math.max(0, index));
-  window.scrollTo({ top: target * slideHeight(), behavior: smooth ? 'smooth' : 'auto' });
+// ---------- плавный переход между слайдами ----------
+// Колесо и клавиши листают по одному слайду: прокрутку ведём сами, с разгоном и торможением.
+// На время перехода отключаем CSS-привязку (она дёргает страницу к ближайшему слайду);
+// для касаний остаётся обычная прокрутка с привязкой.
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+interface Glide {
+  from: number;
+  to: number;
+  start: number | null;
+  duration: number;
 }
+let glide: Glide | null = null;
+let glideEndedAt = 0;
+let targetIndex = 0;
+
+const stopGlide = () => {
+  if (!glide) return;
+  glide = null;
+  glideEndedAt = performance.now();
+  document.documentElement.classList.remove('is-gliding');
+};
+
+const stepGlide = (now: number) => {
+  if (!glide) return;
+  if (glide.start === null) glide.start = now;
+  const t = Math.min(1, Math.max(0, (now - glide.start) / glide.duration));
+  window.scrollTo(0, glide.from + (glide.to - glide.from) * easeInOut(t));
+  if (t >= 1) stopGlide();
+};
+
+function goTo(index: number, smooth = true) {
+  targetIndex = Math.min(slides.length - 1, Math.max(0, index));
+  const top = targetIndex * slideHeight();
+  const distance = Math.abs(top - window.scrollY) / slideHeight();
+  if (!smooth || reducedMotion || distance < 0.01) {
+    stopGlide();
+    window.scrollTo(0, top);
+    return;
+  }
+  // соседний слайд — около секунды, дальний переход чуть дольше
+  glide = { from: window.scrollY, to: top, start: null, duration: Math.min(1900, 820 + 260 * distance) };
+  document.documentElement.classList.add('is-gliding');
+}
+
+let wheelSum = 0;
+let wheelAt = 0;
+window.addEventListener(
+  'wheel',
+  (event) => {
+    if (event.ctrlKey) return; // масштаб страницы
+    event.preventDefault();
+    const now = performance.now();
+    // во время перехода и сразу после него гасим инерцию тачпада
+    if (glide || now - glideEndedAt < 180) {
+      wheelSum = 0;
+      return;
+    }
+    if (now - wheelAt > 220) wheelSum = 0;
+    wheelAt = now;
+    wheelSum += event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+    if (Math.abs(wheelSum) < 36) return;
+    const direction = Math.sign(wheelSum);
+    wheelSum = 0;
+    goTo(targetIndex + direction);
+  },
+  { passive: false },
+);
 
 document.querySelectorAll<HTMLElement>('[data-goto]').forEach((element) => {
   element.addEventListener('click', (event) => {
@@ -64,13 +129,12 @@ const setCurrent = (index: number) => {
 
 window.addEventListener('keydown', (event) => {
   if (event.altKey || event.ctrlKey || event.metaKey) return;
-  const index = Math.round(progress());
   if (['ArrowDown', 'PageDown', ' ', 'ArrowRight'].includes(event.key)) {
     event.preventDefault();
-    goTo(index + 1);
+    goTo(targetIndex + 1);
   } else if (['ArrowUp', 'PageUp', 'ArrowLeft'].includes(event.key)) {
     event.preventDefault();
-    goTo(index - 1);
+    goTo(targetIndex - 1);
   } else if (event.key === 'Home') {
     event.preventDefault();
     goTo(0);
@@ -108,16 +172,22 @@ const start = () => {
   // Отметка времени кадра бывает раньше, чем performance.now() в момент запуска,
   // поэтому отсчёт начинаем с первого кадра и не допускаем отрицательного шага.
   let last: number | null = null;
+  // сцена идёт за прокруткой с небольшим запаздыванием: камера не дёргается, а доезжает
+  let sceneProgress: number | null = null;
   const tick = (now: number) => {
     requestAnimationFrame(tick);
     const dt = last === null ? 0 : Math.min(0.05, Math.max(0, (now - last) / 1000));
     last = now;
+    stepGlide(now);
     const p = progress();
-    setCurrent(Math.min(slides.length - 1, Math.max(0, Math.round(p))));
+    const index = Math.min(slides.length - 1, Math.max(0, Math.round(p)));
+    if (!glide) targetIndex = index;
+    setCurrent(index);
     progressBar.style.transform = `scaleX(${Math.min(1, p / (slides.length - 1))})`;
+    sceneProgress = sceneProgress === null || reducedMotion ? p : sceneProgress + (p - sceneProgress) * (1 - Math.exp(-dt * 5.5));
     if (!stage) return;
     try {
-      const info = stage.frame(p, dt, now / 1000);
+      const info = stage.frame(sceneProgress, dt, now / 1000);
       hud.update(info.state, info.hud);
     } catch (error) {
       // сбой 3D-сцены не должен останавливать слайды: дальше показываем только текст
