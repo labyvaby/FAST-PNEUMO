@@ -1,30 +1,15 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
 import type { ChartData, ChartOptions } from 'chart.js';
+import { Link } from 'react-router-dom';
 import { FaTrash } from 'react-icons/fa6';
 import { AXIS, COLORS, GRID, TOOLTIP } from '../../lib/chartSetup';
 import { NumField, PageHead, Select, Slider, TextField } from '../../components/Fields';
 import { SEAL_TYPES, SealType, VALVES, VALVE_TYPES, Valve, ValveType } from '../../data/valves';
+import { loadUserValves as loadUser, saveUserValves as saveUser, valveLabel } from '../../data/catalogStore';
+import { useSetup } from '../../setup/useSetup';
 
-const STORAGE_KEY = 'pneumo-catalog';
 const MAX_COMPARE = 4;
-
-const loadUser = (): Valve[] => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Valve[]) : [];
-  } catch {
-    return [];
-  }
-};
-
-const saveUser = (valves: Valve[]) => {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(valves));
-  } catch {
-    /* хранилище недоступно — данные останутся до перезагрузки */
-  }
-};
 
 const isValve = (item: unknown): item is Valve => {
   const v = item as Valve;
@@ -69,6 +54,7 @@ const opt = (value: number | '') => (value === '' ? undefined : value);
 const show = (value?: number, unit = '') => (value === undefined ? '—' : `${value}${unit ? ` ${unit}` : ''}`);
 
 const Catalog: React.FC = () => {
+  const { valve: tested, calibrated, selectValve } = useSetup();
   const [userValves, setUserValves] = useState<Valve[]>(loadUser);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [formError, setFormError] = useState('');
@@ -101,6 +87,7 @@ const Catalog: React.FC = () => {
   };
 
   const remove = (id: string) => {
+    if (tested?.id === id) selectValve(null);
     setUserValves((prev) => prev.filter((valve) => valve.id !== id));
     setCompare((prev) => prev.filter((x) => x !== id));
   };
@@ -199,6 +186,24 @@ const Catalog: React.FC = () => {
 
       <section className='act'>
         <div className='wrap stack'>
+          {tested ? (
+            <div className={`alert ${calibrated ? 'ok' : 'info'}`}>
+              <span>
+                На стенде испытывается <b>{valveLabel(tested)}</b>
+                {calibrated
+                  ? ' — модель подогнана под его даташит. '
+                  : ' — модель ещё не подогнана под его даташит, стенд считает с текущими параметрами. '}
+                <Link to='/calculator#calibration'>{calibrated ? 'Калибровка' : 'Откалибровать в Расчёте'}</Link>
+                {' · '}
+                <Link to='/dashboard'>К стенду</Link>
+              </span>
+            </div>
+          ) : (
+            <div className='alert info'>
+              Отметьте распределитель кнопкой «На стенд» — стенд, расчёт и отчёты будут работать с ним, а его
+              даташит станет эталоном для сравнения.
+            </div>
+          )}
           <div className='toolbar'>
             <div className='field'>
               <label htmlFor='q'>Поиск</label>
@@ -243,6 +248,7 @@ const Catalog: React.FC = () => {
                     <th>Масса</th>
                     <th>Уплотнение</th>
                     <th>Источник</th>
+                    <th>Стенд</th>
                     <th />
                   </tr>
                 </thead>
@@ -285,6 +291,18 @@ const Catalog: React.FC = () => {
                           )}
                         </td>
                         <td>
+                          {tested?.id === valve.id ? (
+                            <span className='tag' style={{ '--acc': COLORS.green } as React.CSSProperties}>
+                              <i />
+                              на стенде
+                            </span>
+                          ) : (
+                            <button type='button' className='btn btn-ghost btn-sm' onClick={() => selectValve(valve.id)}>
+                              На стенд
+                            </button>
+                          )}
+                        </td>
+                        <td>
                           {!isBuiltIn(valve.id) && (
                             <button type='button' className='icon-btn' onClick={() => remove(valve.id)} aria-label={`Удалить ${valve.model}`}>
                               <FaTrash size={12} />
@@ -296,7 +314,7 @@ const Catalog: React.FC = () => {
                   })}
                   {filtered.length === 0 && (
                     <tr>
-                      <td colSpan={9} style={{ textAlign: 'center', padding: 28 }}>
+                      <td colSpan={10}style={{ textAlign: 'center', padding: 28 }}>
                         Под фильтр ничего не попало — ослабьте ограничение по времени отклика.
                       </td>
                     </tr>

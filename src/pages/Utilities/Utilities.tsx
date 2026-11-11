@@ -4,7 +4,8 @@ import type { ChartData, ChartOptions } from 'chart.js';
 import { AXIS, COLORS, GRID, TOOLTIP } from '../../lib/chartSetup';
 import { NumField, PageHead, Seg, Slider } from '../../components/Fields';
 import { FLOW_UNITS, FlowUnit, convertFlow, lineDrop } from '../../lib/pneumatics';
-import { DEFAULT_PARAMS, simulate } from '../../lib/valveModel';
+import { simulate } from '../../lib/valveModel';
+import { useSetup } from '../../setup/useSetup';
 
 const fmt = (value: number) => {
   if (!Number.isFinite(value)) return '—';
@@ -21,18 +22,22 @@ const Utilities: React.FC = () => {
   const [b, setB] = useState(0.3);
   const converted = convertFlow(value === '' ? 0 : value, unit, b);
 
-  // ---- падение давления в линии ----
-  const [p1Bar, setP1Bar] = useState(6);
-  const [flow, setFlow] = useState(150);
-  const [length, setLength] = useState(3);
-  const [diameter, setDiameter] = useState(4);
+  // ---- падение давления в линии: это подводящая линия стенда, значения общие для всей установки ----
+  const { setup, label, updateParams, setLine } = useSetup();
+  const params = setup.params;
+  const p1Bar = params.supplyBar;
+  const { flowNlMin: flow, lengthM: length, diameterMm: diameter } = setup.line;
+  const setP1Bar = (value: number) => updateParams({ supplyBar: value });
+  const setFlow = (value: number) => setLine({ flowNlMin: value });
+  const setLength = (value: number) => setLine({ lengthM: value });
+  const setDiameter = (value: number) => setLine({ diameterMm: value });
   const line = lineDrop({ p1Bar, flowNlMin: flow, lengthM: length, diameterMm: diameter });
 
   const switching = useMemo(() => {
-    const before = simulate({ ...DEFAULT_PARAMS, supplyBar: p1Bar }, false);
-    const after = simulate({ ...DEFAULT_PARAMS, supplyBar: Math.max(line.p2Bar, 0) }, false);
+    const before = simulate(params, false);
+    const after = simulate({ ...params, supplyBar: Math.max(line.p2Bar, 0) }, false);
     return { before, after };
-  }, [p1Bar, line.p2Bar]);
+  }, [params, line.p2Bar]);
 
   const lengths = Array.from({ length: 21 }, (_, i) => 0.5 * i);
   const curve = lengths.map((l) => {
@@ -158,15 +163,16 @@ const Utilities: React.FC = () => {
             <div className='head2-row'>
               <h2 className='h2x'>Сколько давления теряет трубка</h2>
               <p className='sub2'>
-                Формула Дарси–Вейсбаха для сжимаемого воздуха: трение ламинарное (64/Re) или турбулентное (Блазиус),
-                плотность по среднему давлению в линии.
+                Это подводящая линия стенда: давление на её выходе получает распределитель на стенде, а потеря
+                попадает в отчёт запуска. Формула Дарси–Вейсбаха для сжимаемого воздуха: трение ламинарное (64/Re)
+                или турбулентное (Блазиус), плотность по среднему давлению в линии.
               </p>
             </div>
           </div>
           <div className='calc-grid'>
             <div className='card sticky'>
               <div className='fields'>
-                <Slider label='Давление на входе' value={p1Bar} min={2} max={10} step={0.1} unit='бар' onChange={setP1Bar} />
+                <Slider label='Давление на входе (регулятор)' value={p1Bar} min={2} max={10} step={0.1} unit='бар' onChange={setP1Bar} hint='То же давление, что в Расчёте' />
                 <Slider label='Расход' value={flow} min={10} max={1500} step={10} unit='нл/мин' digits={0} onChange={setFlow} />
                 <Slider label='Длина линии' value={length} min={0.1} max={10} step={0.1} unit='м' onChange={setLength} />
                 <Slider label='Внутренний диаметр' value={diameter} min={2} max={12} step={0.5} unit='мм' onChange={setDiameter} hint='Трубка 6×4 → 4 мм, 8×6 → 6 мм' />
@@ -237,7 +243,8 @@ const Utilities: React.FC = () => {
                     <li>Замедление<b>{slowdown !== null ? `+${slowdown.toFixed(2)} мс` : '—'}</b></li>
                   </ul>
                   <p className='card-s' style={{ marginTop: 10 }}>
-                    Расчёт по модели из калькулятора с параметрами по умолчанию: пилот питается давлением после линии.
+                    Расчёт по модели испытуемого распределителя ({label}) с параметрами установки: пилот питается
+                    давлением после линии.
                   </p>
                 </div>
               </div>

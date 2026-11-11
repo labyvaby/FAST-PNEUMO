@@ -17,6 +17,23 @@ export interface MeasurementData {
   responseTimeMs: number | null;
 }
 
+import type { ValveParams } from './lib/valveModel';
+
+/** С какой установкой сделан запуск — снимок на момент старта. */
+export interface LaunchSetup {
+  valveId: string | null;
+  valveLabel: string;
+  /** параметры модели подогнаны под даташит этого распределителя */
+  calibrated: boolean;
+  datasheetOnMs?: number;
+  datasheetOffMs?: number;
+  /** давление на регуляторе и на распределителе после линии, бар изб. */
+  regulatorBar: number;
+  valveBar: number;
+  line: { lengthM: number; diameterMm: number; flowNlMin: number };
+  params: ValveParams;
+}
+
 /** Одно переключение в серии: направление и время срабатывания. */
 export interface ResponseSample {
   forward: boolean;
@@ -41,4 +58,7 @@ export interface LaunchData {
   maxResponseTimeMs: number;
   /** все переключения запуска; в старых записях может отсутствовать */
   responses?: ResponseSample[];
+  forwardMeanMs?: number;
+  reverseMeanMs?: number;
+  setup?: LaunchSetup;
 }

@@ -1,0 +1,25 @@
+/* полоса текущей установки под шапкой */
+.setup-bar { border-bottom: 1px solid var(--line); background: rgba(255,255,255,.015); }
+.setup-bar-in {
+  display: flex; align-items: center; gap: 16px; max-width: 1400px; margin-inline: auto;
+  padding: 10px var(--gut); overflow-x: auto; scrollbar-width: none;
+}
+.setup-bar-in::-webkit-scrollbar { display: none; }
+.setup-bar-k { flex: none; font: 500 10.5px/1 var(--f-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); }
+.setup-bar ol { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.setup-bar li { flex: none; display: flex; align-items: center; }
+.setup-bar li + li::before { content: ""; width: 14px; height: 1px; margin-right: 6px; background: var(--line-2); }
+.setup-bar a {
+  display: flex; align-items: center; gap: 9px; padding: 6px 12px 6px 6px; border-radius: 99px;
+  border: 1px solid var(--line); color: var(--ink-2); font-size: 13px; line-height: 1.25;
+  transition: border-color .2s, background-color .2s;
+}
+.setup-bar a:hover { border-color: var(--line-2); background: rgba(255,255,255,.04); }
+.setup-bar a.active { border-color: var(--ink-3); }
+.setup-bar a i {
+  flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  font: 700 11px/1 var(--f-mono); font-style: normal; color: var(--ink-3); border: 1px solid var(--line-2);
+}
+.setup-bar a.done i { color: var(--night); background: var(--green); border-color: var(--green); }
+.setup-bar a span { display: grid; white-space: nowrap; }
+.setup-bar a b { font: 500 10px/1.3 var(--f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }

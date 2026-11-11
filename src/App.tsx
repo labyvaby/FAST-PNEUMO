@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router-dom';
 import { Header } from './components/Header';
+import SetupBar from './setup/SetupBar';
 import { Dashboard } from './pages/Dashboard';
 import { Methodology } from './pages/Methodology';
 import Reports from './pages/Reports/Reports';
@@ -28,6 +29,7 @@ function App() {
         </defs>
       </svg>
       <Header />
+      <SetupBar />
       <main>
         <Routes>
           <Route path='/dashboard' element={<Dashboard />} />

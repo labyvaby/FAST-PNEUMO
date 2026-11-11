@@ -6,27 +6,22 @@ import { AXIS, COLORS, GRID, TOOLTIP } from '../../lib/chartSetup';
 import { ControlPanel } from '../../components/ControlPanel';
 import { Gauge } from '../../components/Gauge';
 import { Scheme } from '../../components/Scheme';
-import { MeasurementData, ResponseSample, Status } from '../../launchTypes';
+import { LaunchSetup, MeasurementData, ResponseSample, Status } from '../../launchTypes';
 import { useLaunchContext } from '../../useLaunchContext';
-import {
-  DEFAULT_PARAMS,
-  SimPoint,
-  ValveParams,
-  crossingTime,
-  positionAt,
-  simulate,
-  simulateReturn,
-} from '../../lib/valveModel';
+import { SimPoint, ValveParams, crossingTime, positionAt, simulate, simulateReturn } from '../../lib/valveModel';
+import { useSetup } from '../../setup/useSetup';
+import { pressureAtValve } from '../../setup/setup';
 
-// Ориентир: самое долгое время выключения среди моделей каталога (Festo VUVG-L14 — 40 мс).
-const RESPONSE_LIMIT_MS = 40;
+// Без выбранного распределителя ориентир — самое долгое время выключения в каталоге (Festo VUVG-L14, 40 мс);
+// с выбранным — его даташит с запасом 25%.
+const DEFAULT_LIMIT_MS = 40;
+const DATASHEET_MARGIN = 1.25;
 
-// Каждое переключение считается той же физической моделью, что и в разделе «Расчёт».
-// Давление питания берётся с «манометра» стенда, трение и напряжение немного гуляют от цикла
-// к циклу — так у серии переключений появляется разброс, как на реальном стенде.
+// Каждое переключение считается той же физической моделью, что и в разделе «Расчёт», с параметрами
+// текущей установки. Давление на регуляторе берётся с «манометра» стенда, через подводящую линию из
+// Утилит на распределитель приходит меньше. Трение и напряжение немного гуляют от цикла к циклу —
+// так у серии переключений появляется разброс, как на реальном стенде.
 const STAND = {
-  params: DEFAULT_PARAMS,
-  supplyPressureKpa: DEFAULT_PARAMS.supplyBar * 100,
   nominalTemperature: 24,
   valveAreaMm2: 18,
   commandPeriodMs: 3200,
@@ -76,6 +71,12 @@ const ZERO_STATE: ModelState = {
 
 const Home: React.FC = () => {
   const { addLaunch, setCurrentStatus, status } = useLaunchContext();
+  const stand = useSetup();
+  // таймеры живут дольше одного рендера — читают установку через ref, чтобы видеть свежие значения
+  const standRef = useRef(stand);
+  standRef.current = stand;
+  const { valve, calibrated, setup, regulatorBar, valveBar, label } = stand;
+  const limitMs = valve ? +(Math.max(valve.onMs, valve.offMs) * DATASHEET_MARGIN).toFixed(1) : DEFAULT_LIMIT_MS;
   const [count, setCount] = useState<number>(0);
   const [pressure, setPressure] = useState<number>(0);
   const [temperature, setTemperature] = useState<number>(0);
@@ -103,6 +104,7 @@ const Home: React.FC = () => {
   const activeSwitchRef = useRef<ActiveSwitch | null>(null);
   const responseTimesRef = useRef<number[]>([]);
   const strokeSpeedRef = useRef(0);
+  const launchSetupRef = useRef<LaunchSetup | null>(null);
   const currentValuesRef = useRef<ModelState>(ZERO_STATE);
 
   const setCurrentValues = (values: ModelState) => {
@@ -152,12 +154,14 @@ const Home: React.FC = () => {
     commandRef.current = forward;
     setIsToggled(forward);
 
-    const supplyKpa = currentValuesRef.current.pressure || STAND.supplyPressureKpa;
+    const current = standRef.current;
+    const base = current.setup.params;
+    const regulatorKpa = currentValuesRef.current.pressure || current.regulatorBar * 100;
     const params: ValveParams = {
-      ...STAND.params,
-      supplyBar: supplyKpa / 100,
-      friction: spread(STAND.params.friction, STAND.frictionSpread),
-      voltage: spread(STAND.params.voltage, STAND.voltageSpread),
+      ...base,
+      supplyBar: pressureAtValve(regulatorKpa / 100, current.setup.line).valveBar,
+      friction: spread(base.friction, STAND.frictionSpread),
+      voltage: spread(base.voltage, STAND.voltageSpread),
     };
     const result = forward ? simulate(params) : simulateReturn(params);
     const crossing = result.ok ? crossingTime(result.series, forward ? 90 : 10, forward) : null;
@@ -174,7 +178,7 @@ const Home: React.FC = () => {
     const ms = round1(crossing);
     activeSwitchRef.current = { startedAt: performance.now(), series: result.series };
     responseTimesRef.current = [...responseTimesRef.current, ms];
-    strokeSpeedRef.current = result.tMove > 0 ? (STAND.params.strokeMm / result.tMove) * 1000 : 0;
+    strokeSpeedRef.current = result.tMove > 0 ? (base.strokeMm / result.tMove) * 1000 : 0;
     currentValuesRef.current = { ...currentValuesRef.current, responseTimeMs: ms };
     setLastResponseTime(ms);
     setModelError(null);
@@ -191,11 +195,12 @@ const Home: React.FC = () => {
     const active = activeSwitchRef.current;
     const nextPosition = active ? positionAt(active.series, performance.now() - active.startedAt) : previous.position;
 
+    const nominalKpa = standRef.current.regulatorBar * 100;
     const pressureLoss = Math.abs(target - previous.position) * 0.18;
     const pressureRipple = Math.sin((Date.now() - (launchStartedAtRef.current ?? Date.now())) / 420) * 1.5;
-    const supplyPressure = clamp(STAND.supplyPressureKpa - pressureLoss + pressureRipple, 540, 620);
+    const supplyPressure = clamp(nominalKpa - pressureLoss + pressureRipple, nominalKpa * 0.9, nominalKpa * 1.03);
     // скорость изменения показаний за тик — для оценки расхода и нагрева
-    const tickVelocity = (((nextPosition - previous.position) / 100) * STAND.params.strokeMm) / dt;
+    const tickVelocity = (((nextPosition - previous.position) / 100) * standRef.current.setup.params.strokeMm) / dt;
     const nextTemperature = clamp(previous.temperature + Math.abs(tickVelocity) * 0.003 - 0.015, 22, 38);
     const flowM3H = clamp(
       (Math.abs(tickVelocity) * STAND.valveAreaMm2 * 0.0036) / 10 + (isRunningRef.current ? 0.18 : 0),
@@ -235,9 +240,21 @@ const Home: React.FC = () => {
     responseTimesRef.current = [];
     strokeSpeedRef.current = 0;
 
+    launchSetupRef.current = {
+      valveId: valve?.id ?? null,
+      valveLabel: label,
+      calibrated,
+      datasheetOnMs: valve?.onMs,
+      datasheetOffMs: valve?.offMs,
+      regulatorBar,
+      valveBar: +valveBar.toFixed(3),
+      line: setup.line,
+      params: setup.params,
+    };
+
     const initialValues: ModelState = {
       ...ZERO_STATE,
-      pressure: STAND.supplyPressureKpa,
+      pressure: regulatorBar * 100,
       temperature: STAND.nominalTemperature,
     };
 
@@ -293,6 +310,9 @@ const Home: React.FC = () => {
       minResponseTimeMs: responseTimes.length > 0 ? Math.min(...responseTimes) : 0,
       maxResponseTimeMs: responseTimes.length > 0 ? Math.max(...responseTimes) : 0,
       responses: cycles,
+      forwardMeanMs: forwardMean ?? undefined,
+      reverseMeanMs: reverseMean ?? undefined,
+      setup: launchSetupRef.current ?? undefined,
     });
     setHistory((prevHistory) => [...prevHistory, `Остановлена ${endTimestamp}`]);
     launchStartedAtRef.current = null;
@@ -331,14 +351,18 @@ const Home: React.FC = () => {
     const nextErrors: string[] = [];
 
     if (status === Status.STARTED) {
-      if (pressure < 560) {
+      if (pressure < regulatorBar * 100 * 0.93) {
         nextWarnings.push('Давление питания ниже расчётного уровня');
       }
       if (temperature > 34) {
         nextWarnings.push('Повышенная температура воздуха');
       }
-      if (lastResponseTime && lastResponseTime > RESPONSE_LIMIT_MS) {
-        nextErrors.push('Время срабатывания превышает допустимый предел');
+      if (lastResponseTime && lastResponseTime > limitMs) {
+        nextErrors.push(
+          valve
+            ? `Время срабатывания больше даташита ${label} с запасом 25% (${limitMs} мс)`
+            : 'Время срабатывания превышает допустимый предел'
+        );
       }
       if (modelError) {
         nextErrors.push(modelError);
@@ -347,7 +371,7 @@ const Home: React.FC = () => {
 
     setWarnings(nextWarnings);
     setErrors(nextErrors);
-  }, [lastResponseTime, modelError, pressure, status, temperature]);
+  }, [label, lastResponseTime, limitMs, modelError, pressure, regulatorBar, status, temperature, valve]);
 
   const averageValue = (
     field: keyof Pick<MeasurementData, 'pressure' | 'temperature' | 'flow' | 'position' | 'velocity' | 'energy'>
@@ -365,7 +389,7 @@ const Home: React.FC = () => {
   const forwardMean = mean(cycles.filter((c) => c.forward).map((c) => c.ms));
   const reverseMean = mean(cycles.filter((c) => !c.forward).map((c) => c.ms));
   const recentCycles = cycles.slice(-24);
-  const barScale = Math.max(RESPONSE_LIMIT_MS * 1.12, ...recentCycles.map((c) => c.ms));
+  const barScale = Math.max(limitMs * 1.12, ...recentCycles.map((c) => c.ms));
 
   const isStarted = status === Status.STARTED;
 
@@ -375,8 +399,18 @@ const Home: React.FC = () => {
     { t: transients.reverse, label: 'Обратный ход, %', color: COLORS.violet, fill: 'rgba(139,108,255,0.08)' },
   ];
   const chartMax = Math.ceil(
-    Math.max(10, ...curves.flatMap(({ t }) => (t ? [t.series[t.series.length - 1].t] : [])))
+    Math.max(
+      10,
+      ...(valve ? [valve.onMs * 1.1, valve.offMs * 1.1] : []),
+      ...curves.flatMap(({ t }) => (t ? [t.series[t.series.length - 1].t] : []))
+    )
   );
+  const datasheetMarks = valve
+    ? [
+        { label: `даташит tвкл ${valve.onMs} мс`, x: valve.onMs, color: 'rgba(31,182,206,0.55)' },
+        { label: `даташит tвыкл ${valve.offMs} мс`, x: valve.offMs, color: 'rgba(139,108,255,0.6)' },
+      ]
+    : [];
   const level = (y: number): XY[] => [
     { x: 0, y },
     { x: chartMax, y },
@@ -411,6 +445,17 @@ const Home: React.FC = () => {
       ),
       { label: 'Порог 90%', data: level(90), borderColor: COLORS.faint, borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
       { label: 'Порог 10%', data: level(10), borderColor: COLORS.faint, borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
+      ...datasheetMarks.map((mark) => ({
+        label: mark.label,
+        data: [
+          { x: mark.x, y: 0 },
+          { x: mark.x, y: 100 },
+        ],
+        borderColor: mark.color,
+        borderDash: [10, 5],
+        borderWidth: 2,
+        pointRadius: 0,
+      })),
     ],
   };
 
@@ -443,15 +488,19 @@ const Home: React.FC = () => {
     },
   };
 
+  const p = setup.params;
   const params = [
-    ['P', `${STAND.params.supplyBar} бар`],
-    ['m', `${STAND.params.spoolMassG} г`],
-    ['ход', `${STAND.params.strokeMm} мм`],
-    ['d канала', `${STAND.params.channelMm} мм`],
-    ['μ', `${STAND.params.friction} ±${STAND.frictionSpread * 100}%`],
-    ['U', `${STAND.params.voltage} В ±${STAND.voltageSpread * 100}%`],
+    ['P рег → распр.', `${regulatorBar} → ${valveBar.toFixed(2)} бар`],
+    ['m', `${p.spoolMassG} г`],
+    ['ход', `${p.strokeMm} мм`],
+    ['d канала', `${+p.channelMm.toFixed(2)} мм`],
+    ['F0', `${+(p.springPreloadN ?? 8).toFixed(1)} Н`],
+    ['μ', `${p.friction} ±${STAND.frictionSpread * 100}%`],
+    ['U', `${p.voltage} В ±${STAND.voltageSpread * 100}%`],
     ['период', `${STAND.commandPeriodMs / 1000} с`],
   ];
+  const deviation = (measured: number | null, datasheet?: number) =>
+    measured !== null && datasheet ? `${measured > datasheet ? '+' : ''}${(((measured - datasheet) / datasheet) * 100).toFixed(0)}%` : '';
 
   return (
     <>
@@ -477,6 +526,21 @@ const Home: React.FC = () => {
               Каждое переключение рассчитывается физической моделью из раздела «Расчёт»: катушка,
               пилотная камера, движение золотника.
             </p>
+            <div className={`alert ${valve ? (calibrated ? 'ok' : 'warn') : 'info'}`} style={{ marginBottom: 16 }}>
+              <span>
+                Испытуемый: <b>{label}</b>
+                {valve
+                  ? calibrated
+                    ? ` — модель подогнана под даташит (${valve.onMs} / ${valve.offMs} мс). `
+                    : ` — модель не подогнана под даташит, сравнение с ним будет условным. `
+                  : ' — распределитель не выбран, стенд работает с параметрами из Расчёта. '}
+                {!valve && <Link to='/catalog'>Выбрать в Каталоге</Link>}
+                {valve && !calibrated && <Link to='/calculator#calibration'>Откалибровать</Link>}
+                {valve && calibrated && <Link to='/calculator'>Параметры</Link>}
+                {' · '}
+                <Link to='/utilities'>Линия {setup.line.lengthM} м × {setup.line.diameterMm} мм</Link>
+              </span>
+            </div>
             <ul className='params' aria-label='Параметры модели'>
               {params.map(([k, v]) => (
                 <li key={k}>
@@ -532,12 +596,12 @@ const Home: React.FC = () => {
                 <div className='stat hi' style={{ '--acc': '#1FB6CE' } as React.CSSProperties}>
                   <span><i className='sym'>tср</i> прямой</span>
                   <b>{forwardMean ?? '—'}<small>мс</small></b>
-                  <em>среднее, P→A</em>
+                  <em>{valve ? `даташит ${valve.onMs} мс ${deviation(forwardMean, valve.onMs)}` : 'среднее, P→A'}</em>
                 </div>
                 <div className='stat hi' style={{ '--acc': '#8B6CFF' } as React.CSSProperties}>
                   <span><i className='sym'>tср</i> обратный</span>
                   <b>{reverseMean ?? '—'}<small>мс</small></b>
-                  <em>среднее, P→B</em>
+                  <em>{valve ? `даташит ${valve.offMs} мс ${deviation(reverseMean, valve.offMs)}` : 'среднее, P→B'}</em>
                 </div>
                 <div className='stat'>
                   <span>Переключений</span>
@@ -546,8 +610,8 @@ const Home: React.FC = () => {
                 </div>
                 <div className='stat'>
                   <span>Предел</span>
-                  <b>{RESPONSE_LIMIT_MS}<small>мс</small></b>
-                  <em>худшее tвыкл в каталоге</em>
+                  <b>{limitMs}<small>мс</small></b>
+                  <em>{valve ? 'даташит +25%' : 'худшее tвыкл в каталоге'}</em>
                 </div>
               </div>
               <div className='card' style={{ '--acc': isToggled ? '#1FB6CE' : '#8B6CFF' } as React.CSSProperties}>
@@ -609,6 +673,7 @@ const Home: React.FC = () => {
                 <span><i style={{ '--c': COLORS.teal } as React.CSSProperties} />прямой ход</span>
                 <span><i style={{ '--c': COLORS.violet } as React.CSSProperties} />обратный ход</span>
                 <span><i className='dash' style={{ '--c': 'rgba(244,242,238,.5)' } as React.CSSProperties} />пороги 10 / 90%</span>
+                {valve && <span><i className='dash' style={{ '--c': COLORS.ink } as React.CSSProperties} />tвкл / tвыкл по даташиту</span>}
               </div>
             </div>
 
@@ -623,8 +688,8 @@ const Home: React.FC = () => {
                 <div className='bars-empty'>Столбики появятся после первого переключения</div>
               ) : (
                 <div className='bars' role='img' aria-label='Время срабатывания по переключениям'>
-                  <div className='limit' style={{ bottom: `${(RESPONSE_LIMIT_MS / barScale) * 100}%` }}>
-                    <span>предел {RESPONSE_LIMIT_MS} мс</span>
+                  <div className='limit' style={{ bottom: `${(limitMs / barScale) * 100}%` }}>
+                    <span>предел {limitMs} мс</span>
                   </div>
                   {recentCycles.map((cycle, index) => (
                     <i

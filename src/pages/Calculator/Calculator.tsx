@@ -4,6 +4,7 @@ import type { ChartData, ChartOptions } from 'chart.js';
 import { AXIS, COLORS, GRID, TOOLTIP } from '../../lib/chartSetup';
 import { PageHead, Seg, Slider } from '../../components/Fields';
 import Calibration from '../../components/Calibration/Calibration';
+import { useSetup } from '../../setup/useSetup';
 import {
   DEFAULT_PARAMS,
   SWEEPS,
@@ -19,12 +20,14 @@ type XY = { x: number; y: number | null };
 const fmt = (value: number) => (value >= 100 ? value.toFixed(0) : value.toFixed(1));
 
 const Calculator: React.FC = () => {
-  const [params, setParams] = useState<ValveParams>(DEFAULT_PARAMS);
+  // параметры — общие для всей установки: стенд, утилиты и отчёты считают с ними же
+  const { setup, label, calibrated, valveBar, updateParams } = useSetup();
+  const params = setup.params;
   const [sweepKey, setSweepKey] = useState<SweepKey>('supplyBar');
 
   const result = useMemo(() => simulate(params), [params]);
   const sweepPoints = useMemo(() => sweep(params, sweepKey), [params, sweepKey]);
-  const set = (key: keyof ValveParams) => (value: number) => setParams((prev) => ({ ...prev, [key]: value }));
+  const set = (key: keyof ValveParams) => (value: number) => updateParams({ [key]: value });
 
   const lastT = result.series.length > 0 ? result.series[result.series.length - 1].t : 20;
   const vertical = (t: number) => [
@@ -207,21 +210,35 @@ const Calculator: React.FC = () => {
           <div className='card sticky'>
             <div className='card-h'>
               <div>
-                <h2 className='card-t'>Параметры</h2>
-                <p className='card-s'>Распределитель 5/2 с пилотным управлением</p>
+                <h2 className='card-t'>Параметры установки</h2>
+                <p className='card-s'>
+                  {label} · {calibrated ? 'подогнано под даташит' : 'без калибровки'}
+                </p>
               </div>
-              <button type='button' className='btn btn-ghost btn-sm' onClick={() => setParams(DEFAULT_PARAMS)}>
+              <button type='button' className='btn btn-ghost btn-sm' onClick={() => updateParams(DEFAULT_PARAMS)}>
                 Сброс
               </button>
             </div>
             <div className='fields'>
-              <Slider label={<>Давление питания <i className='sym'>P</i></>} value={params.supplyBar} min={2} max={10} step={0.1} unit='бар' onChange={set('supplyBar')} />
+              <p className='card-s' style={{ marginTop: 0 }}>
+                Эти параметры использует стенд. Правка вручную снимает отметку о калибровке.
+              </p>
+              <Slider
+                label={<>Давление на регуляторе <i className='sym'>P</i></>}
+                value={params.supplyBar}
+                min={2}
+                max={10}
+                step={0.1}
+                unit='бар'
+                hint={`На стенде после подводящей линии на распределитель придёт ${valveBar.toFixed(2)} бар — длина и диаметр линии задаются в Утилитах`}
+                onChange={set('supplyBar')}
+              />
               <Slider label={<>Масса золотника <i className='sym'>m</i></>} value={params.spoolMassG} min={5} max={50} step={1} unit='г' digits={0} onChange={set('spoolMassG')} />
               <Slider label={<>Ход золотника <i className='sym'>x</i></>} value={params.strokeMm} min={1} max={10} step={0.1} unit='мм' onChange={set('strokeMm')} />
               <Slider
                 label={<>Диаметр пилотного канала <i className='sym'>d</i></>}
                 value={params.channelMm}
-                min={0.4}
+                min={0.3}
                 max={3}
                 step={0.05}
                 unit='мм'
@@ -404,7 +421,7 @@ const Calculator: React.FC = () => {
         </div>
       </section>
 
-      <Calibration base={params} onApply={setParams} />
+      <Calibration />
     </>
   );
 };

@@ -20,13 +20,25 @@ const downloadCsv = (fileName: string, header: string[], rows: (string | number)
 const exportLaunches = (launches: LaunchData[]) =>
   downloadCsv(
     'zapuski.csv',
-    ['№', 'Начало', 'Конец', 'Длительность, с', 'Переключений', 'tср среднее, мс', 'tср мин, мс', 'tср макс, мс', 'Давление, кПа', 'Температура, °C', 'Расход, м³/ч', 'Скорость золотника, мм/с'],
+    [
+      '№', 'Начало', 'Конец', 'Испытуемый', 'Модель откалибрована', 'Давление на регуляторе, бар', 'Давление на распределителе, бар',
+      'Длительность, с', 'Переключений', 'tср прямой, мс', 'Даташит tвкл, мс', 'tср обратный, мс', 'Даташит tвыкл, мс',
+      'tср среднее, мс', 'tср мин, мс', 'tср макс, мс', 'Давление, кПа', 'Температура, °C', 'Расход, м³/ч', 'Скорость золотника, мм/с',
+    ],
     launches.map((l, i) => [
       i + 1,
       l.timestamp,
       l.endTimestamp,
+      l.setup?.valveLabel ?? '',
+      l.setup ? (l.setup.calibrated ? 'да' : 'нет') : '',
+      l.setup?.regulatorBar ?? '',
+      l.setup?.valveBar ?? '',
       l.durationSeconds,
       l.responses?.length ?? l.cycles,
+      l.forwardMeanMs ?? '',
+      l.setup?.datasheetOnMs ?? '',
+      l.reverseMeanMs ?? '',
+      l.setup?.datasheetOffMs ?? '',
       l.averageResponseTimeMs,
       l.minResponseTimeMs,
       l.maxResponseTimeMs,
@@ -43,6 +55,12 @@ const exportResponses = (launch: LaunchData, index: number) =>
     ['№ переключения', 'Направление', 'tср, мс'],
     (launch.responses ?? []).map((r, i) => [i + 1, r.forward ? 'прямой' : 'обратный', r.ms])
   );
+
+const compare = (measured?: number, datasheet?: number) => {
+  if (measured === undefined || datasheet === undefined) return '—';
+  const diff = ((measured - datasheet) / datasheet) * 100;
+  return `${measured.toFixed(1)} / ${datasheet} мс · ${diff > 0 ? '+' : ''}${diff.toFixed(0)}%`;
+};
 
 const Statistics: React.FC = () => {
   const { launches, clearLaunches } = useLaunchContext();
@@ -153,6 +171,25 @@ const Statistics: React.FC = () => {
                       </span>
                     </div>
 
+                    {launch.setup && (
+                      <p className='card-s' style={{ marginTop: 0, marginBottom: 14 }}>
+                        <b>{launch.setup.valveLabel}</b> · {launch.setup.calibrated ? 'модель подогнана под даташит' : 'без калибровки'} ·{' '}
+                        {launch.setup.regulatorBar} → {launch.setup.valveBar.toFixed(2)} бар (линия {launch.setup.line.lengthM} м ×{' '}
+                        {launch.setup.line.diameterMm} мм)
+                      </p>
+                    )}
+                    {launch.setup?.datasheetOnMs !== undefined && (
+                      <ul className='kv' style={{ marginBottom: 14 }}>
+                        <li>
+                          Прямой: стенд / даташит
+                          <b>{compare(launch.forwardMeanMs, launch.setup.datasheetOnMs)}</b>
+                        </li>
+                        <li>
+                          Обратный: стенд / даташит
+                          <b>{compare(launch.reverseMeanMs, launch.setup.datasheetOffMs)}</b>
+                        </li>
+                      </ul>
+                    )}
                     <div className='stats' style={{ '--cols': 2 } as React.CSSProperties}>
                       <div className='stat'>
                         <span>Длительность</span>

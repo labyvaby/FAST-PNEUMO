@@ -1,11 +1,13 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Line } from 'react-chartjs-2';
 import type { ChartData, ChartOptions } from 'chart.js';
+import { Link, useLocation } from 'react-router-dom';
 import { AXIS, COLORS, GRID, TOOLTIP } from '../../lib/chartSetup';
 import { Select } from '../Fields';
-import { VALVES } from '../../data/valves';
+import { allValves, valveLabel } from '../../data/catalogStore';
 import { CalibrationResult, calibrate, responseTimes } from '../../lib/calibration';
 import { VALVE_CONST, ValveParams, simulate, simulateReturn } from '../../lib/valveModel';
+import { useSetup } from '../../setup/useSetup';
 
 /** давление по умолчанию, если в даташите условие не указано, бар изб. */
 const DEFAULT_TEST_BAR = 6;
@@ -14,22 +16,25 @@ const GOOD_FIT_PCT = 5;
 
 type XY = { x: number; y: number };
 
-interface CalibrationProps {
-  base: ValveParams;
-  onApply: (params: ValveParams) => void;
-}
-
 const ms = (value: number | undefined) => (value === undefined ? '—' : `${value.toFixed(1)} мс`);
 const pct = (value: number) => `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;
 
-const Calibration: React.FC<CalibrationProps> = ({ base, onApply }) => {
-  const [valveId, setValveId] = useState(VALVES[0]?.id ?? '');
+/** Калибровка испытуемого распределителя: выбор здесь — это выбор распределителя для стенда. */
+const Calibration: React.FC = () => {
+  const { setup, calibrated, selectValve, applyCalibration } = useSetup();
+  const { hash } = useLocation();
+  const valves = useMemo(allValves, []);
+  const valveId = setup.valveId ?? valves[0]?.id ?? '';
+  const base = setup.params;
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [fit, setFit] = useState<{ valveId: string; result: CalibrationResult | null } | null>(null);
-  const [applied, setApplied] = useState(false);
 
-  const valve = VALVES.find((item) => item.id === valveId);
+  useEffect(() => {
+    if (hash === '#calibration') document.getElementById('calibration')?.scrollIntoView({ block: 'start' });
+  }, [hash]);
+
+  const valve = valves.find((item) => item.id === valveId);
   const testBar = valve?.testBar ?? DEFAULT_TEST_BAR;
   const current = useMemo(() => ({ ...base, supplyBar: testBar }), [base, testBar]);
   const before = useMemo(() => responseTimes(current), [current]);
@@ -41,10 +46,17 @@ const Calibration: React.FC<CalibrationProps> = ({ base, onApply }) => {
   const curves = useMemo(() => ({ forward: simulate(shown), reverse: simulateReturn(shown) }), [shown]);
   const coilAndArmature = curves.forward.tCoil + curves.forward.tArmature;
 
+  const applied =
+    !!result &&
+    calibrated &&
+    setup.calibratedFor === valveId &&
+    base.channelMm === result.params.channelMm &&
+    base.springPreloadN === result.params.springPreloadN;
+
   const run = async () => {
     if (!valve || busy) return;
+    if (!setup.valveId) selectValve(valve.id);
     setBusy(true);
-    setApplied(false);
     setProgress(0);
     const found = await calibrate(current, { onMs: valve.onMs, offMs: valve.offMs }, setProgress);
     setFit({ valveId: valve.id, result: found });
@@ -52,9 +64,7 @@ const Calibration: React.FC<CalibrationProps> = ({ base, onApply }) => {
   };
 
   const apply = () => {
-    if (!result) return;
-    onApply(result.params);
-    setApplied(true);
+    if (result && valve) applyCalibration(result.params, valve.id);
   };
 
   if (!valve) return null;
@@ -112,7 +122,7 @@ const Calibration: React.FC<CalibrationProps> = ({ base, onApply }) => {
   const preload = (p: ValveParams) => p.springPreloadN ?? VALVE_CONST.springPreloadN;
 
   return (
-    <section className='act' id='calibration'>
+    <section className='act' id='calibration' style={{ scrollMarginTop: 'calc(var(--hdr) + 12px)' }}>
       <div className='wrap'>
         <div className='head2'>
           <p className='kicker'>Калибровка по даташиту</p>
@@ -130,14 +140,15 @@ const Calibration: React.FC<CalibrationProps> = ({ base, onApply }) => {
           <div className='card' style={{ '--acc': COLORS.green } as React.CSSProperties}>
             <div className='fields'>
               <Select
-                label='Распределитель из каталога'
+                label='Испытуемый распределитель'
                 value={valveId}
-                onChange={(id) => {
-                  setValveId(id);
-                  setApplied(false);
-                }}
-                options={VALVES.map((item) => ({ value: item.id, label: `${item.maker} ${item.model}` }))}
+                onChange={selectValve}
+                options={valves.map((item) => ({ value: item.id, label: valveLabel(item) }))}
               />
+              <p className='card-s' style={{ marginTop: 0 }}>
+                Этот же распределитель стоит на <Link to='/dashboard'>стенде</Link>, а его даташит — эталон в отчётах.{' '}
+                {calibrated ? 'Модель уже подогнана под него.' : 'Модель под него ещё не подогнана.'}
+              </p>
               <p className='card-s' style={{ marginTop: 0 }}>
                 Давление при подборе — {testBar} бар
                 {valve.testBar !== undefined ? ', как в условиях даташита.' : ': в даташите условие не указано, принято по умолчанию.'}{' '}
@@ -149,7 +160,7 @@ const Calibration: React.FC<CalibrationProps> = ({ base, onApply }) => {
                 </button>
                 {result && good && (
                   <button type='button' className='btn btn-ghost btn-sm' onClick={apply} disabled={applied}>
-                    {applied ? 'Применено к расчёту' : 'Применить к расчёту'}
+                    {applied ? 'Применено к установке' : 'Применить к установке'}
                   </button>
                 )}
               </div>
